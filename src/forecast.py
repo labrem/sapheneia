@@ -13,7 +13,6 @@ Key Features:
 """
 
 import numpy as np
-import pandas as pd
 import logging
 from typing import List, Dict, Optional, Tuple, Any, Union
 import timesfm
@@ -98,63 +97,48 @@ class Forecaster:
             logger.error(f"❌ Basic forecasting failed: {str(e)}")
             raise
     
-    def forecast_with_quantiles(
+    def forecast(
         self,
         inputs: Union[List[float], List[List[float]]],
-        freq: Union[int, List[int]] = 0,
-        quantiles: Optional[List[float]] = None
+        freq: Union[int, List[int]] = 0
     ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
-        Perform forecasting with quantile predictions (Marcelo's approach).
+        Perform TimesFM forecasting and return both point and quantile forecasts.
         
-        This method first performs point forecasting, then attempts quantile
-        forecasting using the experimental_quantile_forecast method.
-        
-        Args:
-            inputs: Input time series data
-            freq: Frequency indicator(s)
-            quantiles: List of quantiles to compute (if supported)
-            
-        Returns:
-            Tuple of (point_forecast, quantile_forecast)
+        In the installed TimesFM version used by the notebooks, `TimesFm.forecast`
+        returns a tuple: (point_forecast, experimental_quantile_forecast).
+        We rely on that directly here for robustness.
         """
-        logger.info("Performing TimesFM forecasting with quantiles...")
-        
-        # Get basic point forecast first
-        point_forecast, _ = self.forecast_basic(inputs, freq)
-        quantile_forecast = None
-        
-        # Try experimental quantile forecasting
-        if self.capabilities['quantile_forecasting']:
-            try:
-                logger.info("Using experimental_quantile_forecast method...")
-                
-                # Normalize inputs format for quantile method
-                if isinstance(inputs[0], (int, float)):
-                    inputs_norm = [inputs]
-                else:
-                    inputs_norm = inputs
-                    
-                if isinstance(freq, int):
-                    freq_norm = [freq] * len(inputs_norm)
-                else:
-                    freq_norm = freq
-                
-                quantile_result = self.model.experimental_quantile_forecast(
-                    inputs=inputs_norm,
-                    freq=freq_norm
-                )
-                
-                quantile_forecast = np.array(quantile_result)
-                logger.info(f"✅ Quantile forecast completed. Shape: {quantile_forecast.shape}")
-                
-            except Exception as e:
-                logger.warning(f"⚠️ Quantile forecasting failed: {str(e)}")
-                logger.info("Continuing with point forecast only")
+        logger.info("Performing TimesFM forecasting with built-in quantiles...")
+
+        # Normalize inputs format
+        if isinstance(inputs[0], (int, float)):
+            inputs_norm = [inputs]
         else:
-            logger.info("⚠️ Experimental quantile forecasting not available")
-        
-        return point_forecast, quantile_forecast
+            inputs_norm = inputs
+
+        if isinstance(freq, int):
+            freq_norm = [freq] * len(inputs_norm)
+        else:
+            freq_norm = freq
+
+        try:
+            # Many TimesFM builds return (point, quantiles)
+            point, maybe_quantiles = self.model.forecast(inputs=inputs_norm, freq=freq_norm)
+            point_array = np.array(point)
+
+            quantile_array: Optional[np.ndarray] = None
+            try:
+                quantile_array = np.array(maybe_quantiles)
+            except Exception:
+                quantile_array = None
+
+            logger.info(f"✅ Forecast completed. point shape: {point_array.shape}, quantiles: {None if quantile_array is None else quantile_array.shape}")
+            return point_array, quantile_array
+
+        except Exception as e:
+            logger.error(f"❌ Forecast failed: {str(e)}")
+            raise
     
     def forecast_with_covariates(
         self,
@@ -167,12 +151,12 @@ class Forecaster:
         xreg_mode: str = "xreg + timesfm",
         ridge: float = 0.0,
         normalize_xreg_target_per_input: bool = True
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
-        Perform forecasting with covariates support.
+        Perform forecasting with covariates support and quantile predictions.
         
         This method uses TimesFM's forecast_with_covariates functionality to
-        incorporate exogenous variables into the forecasting process.
+        incorporate exogenous variables and always attempts to get quantiles.
         
         Args:
             inputs: Input time series data
@@ -186,7 +170,7 @@ class Forecaster:
             normalize_xreg_target_per_input: Whether to normalize covariates
             
         Returns:
-            Tuple of (enhanced_forecast, linear_model_forecast)
+            Tuple of (enhanced_forecast, quantile_forecast)
         """
         if not self.capabilities['covariates_support']:
             raise ValueError("Model does not support covariates forecasting")
@@ -224,13 +208,25 @@ class Forecaster:
             )
             
             enhanced_array = np.array(enhanced_forecast)
-            linear_array = np.array(linear_forecast)
             
             logger.info(f"✅ Covariates forecasting completed.")
             logger.info(f"  Enhanced forecast shape: {enhanced_array.shape}")
-            logger.info(f"  Linear model forecast shape: {linear_array.shape}")
             
-            return enhanced_array, linear_array
+            # Try to get quantiles for the enhanced forecast
+            quantile_forecast = None
+            if self.capabilities['quantile_forecasting']:
+                try:
+                    logger.info("Getting quantiles for covariates-enhanced forecast...")
+                    quantile_result = self.model.experimental_quantile_forecast(
+                        inputs=inputs,
+                        freq=freq
+                    )
+                    quantile_forecast = np.array(quantile_result)
+                    logger.info(f"✅ Quantile forecast for covariates completed. Shape: {quantile_forecast.shape}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Quantile forecasting with covariates failed: {str(e)}")
+            
+            return enhanced_array, quantile_forecast
             
         except Exception as e:
             logger.error(f"❌ Covariates forecasting failed: {str(e)}")
@@ -280,162 +276,6 @@ class Forecaster:
                     raise ValueError(f"{cov_name} covariate '{var_name}' must have {num_series} values, got {len(var_data)}")
         
         logger.info("✅ Covariates validation passed")
-    
-    def generate_prediction_intervals(
-        self,
-        inputs: Union[List[float], List[List[float]]],
-        freq: Union[int, List[int]] = 0,
-        covariates: Optional[Dict[str, Any]] = None,
-        num_bootstrap_samples: int = 100,
-        confidence_levels: List[float] = [0.5, 0.8, 0.95],
-        noise_scale: float = 0.05
-    ) -> Dict[str, np.ndarray]:
-        """
-        Generate prediction intervals using bootstrap sampling approach.
-        
-        This method creates multiple perturbed forecasts to estimate uncertainty
-        and compute prediction intervals at specified confidence levels.
-        
-        Args:
-            inputs: Input time series data
-            freq: Frequency indicator(s)
-            covariates: Optional covariates dictionary
-            num_bootstrap_samples: Number of bootstrap samples to generate
-            confidence_levels: Confidence levels for prediction intervals
-            noise_scale: Scale of noise to add for bootstrap sampling
-            
-        Returns:
-            Dictionary containing forecasts and intervals
-        """
-        logger.info(f"Generating prediction intervals with {num_bootstrap_samples} bootstrap samples...")
-        
-        # Normalize inputs
-        if isinstance(inputs[0], (int, float)):
-            inputs = [inputs]
-            single_series = True
-        else:
-            single_series = False
-            
-        if isinstance(freq, int):
-            freq = [freq] * len(inputs)
-        
-        forecasts_collection = []
-        base_forecast = None
-        
-        # Generate base forecast
-        try:
-            if covariates and self.capabilities['covariates_support']:
-                base_forecast, _ = self.forecast_with_covariates(
-                    inputs=inputs,
-                    freq=freq,
-                    **covariates
-                )
-            else:
-                base_forecast, _ = self.forecast_basic(inputs, freq)
-            
-            forecasts_collection.append(base_forecast)
-            
-        except Exception as e:
-            logger.error(f"Failed to generate base forecast: {str(e)}")
-            raise
-        
-        # Generate bootstrap samples
-        successful_samples = 1
-        for i in range(num_bootstrap_samples - 1):
-            try:
-                # Add noise to inputs
-                noisy_inputs = []
-                for series in inputs:
-                    noise = np.random.normal(0, noise_scale, len(series))
-                    noisy_series = (np.array(series) * (1 + noise)).tolist()
-                    noisy_inputs.append(noisy_series)
-                
-                # Generate forecast with noisy inputs
-                if covariates and self.capabilities['covariates_support']:
-                    # Also perturb covariates slightly
-                    noisy_covariates = self._perturb_covariates(covariates, noise_scale * 0.5)
-                    perturbed_forecast, _ = self.forecast_with_covariates(
-                        inputs=noisy_inputs,
-                        freq=freq,
-                        **noisy_covariates
-                    )
-                else:
-                    perturbed_forecast, _ = self.forecast_basic(noisy_inputs, freq)
-                
-                forecasts_collection.append(perturbed_forecast)
-                successful_samples += 1
-                
-            except Exception:
-                # Fallback: add synthetic noise around base forecast
-                if base_forecast is not None:
-                    noise = np.random.normal(0, np.std(base_forecast) * 0.2, base_forecast.shape)
-                    synthetic_forecast = base_forecast + noise
-                    forecasts_collection.append(synthetic_forecast)
-                    successful_samples += 1
-        
-        logger.info(f"Generated {successful_samples} successful bootstrap samples")
-        
-        # Calculate prediction intervals
-        forecasts_array = np.array(forecasts_collection)
-        
-        results = {
-            'mean_forecast': np.mean(forecasts_array, axis=0),
-            'median_forecast': np.percentile(forecasts_array, 50, axis=0),
-            'std_forecast': np.std(forecasts_array, axis=0)
-        }
-        
-        # Calculate confidence intervals
-        for conf_level in confidence_levels:
-            alpha = 1 - conf_level
-            lower_q = (alpha / 2) * 100
-            upper_q = (1 - alpha / 2) * 100
-            
-            results[f'lower_{int(conf_level*100)}'] = np.percentile(forecasts_array, lower_q, axis=0)
-            results[f'upper_{int(conf_level*100)}'] = np.percentile(forecasts_array, upper_q, axis=0)
-        
-        # Return single series format if input was single series
-        if single_series:
-            results = {k: v[0] if v.ndim > 1 else v for k, v in results.items()}
-        
-        logger.info(f"✅ Prediction intervals generated for confidence levels: {confidence_levels}")
-        
-        return results
-    
-    def _perturb_covariates(
-        self, 
-        covariates: Dict[str, Any], 
-        noise_scale: float
-    ) -> Dict[str, Any]:
-        """Add slight perturbations to covariates for bootstrap sampling."""
-        perturbed = {}
-        
-        for cov_type, cov_data in covariates.items():
-            if not cov_data:
-                perturbed[cov_type] = cov_data
-                continue
-                
-            perturbed[cov_type] = {}
-            
-            for var_name, var_values in cov_data.items():
-                if 'numerical' in cov_type:
-                    # Add noise to numerical covariates
-                    perturbed_values = []
-                    for series in var_values:
-                        if isinstance(series, list):
-                            noise = np.random.normal(0, noise_scale, len(series))
-                            perturbed_series = (np.array(series) * (1 + noise)).tolist()
-                            perturbed_values.append(perturbed_series)
-                        else:
-                            # Single value
-                            noise = np.random.normal(0, noise_scale)
-                            perturbed_values.append(series * (1 + noise))
-                    
-                    perturbed[cov_type][var_name] = perturbed_values
-                else:
-                    # Keep categorical covariates unchanged
-                    perturbed[cov_type][var_name] = var_values
-        
-        return perturbed
     
     def get_forecast_summary(
         self, 

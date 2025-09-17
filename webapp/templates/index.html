@@ -59,18 +59,31 @@
                             <input type="number" class="form-control" id="horizonLen" value="24" min="1" max="128">
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label">Checkpoint</label>
-                            <select class="form-select" id="checkpoint">
-                                <option value="google/timesfm-2.0-500m-pytorch" selected>PyTorch (default)</option>
-                                <option value="google/timesfm-2.0-500m-jax">JAX</option>
+                            <label class="form-label">Model Source</label>
+                            <select class="form-select" id="modelSource">
+                                <option value="huggingface" selected>HuggingFace Checkpoint</option>
                                 <option value="local">Local Model Path</option>
                             </select>
                         </div>
                     </div>
+                    
+                    <!-- HuggingFace Checkpoint Row -->
+                    <div class="row mt-3" id="huggingfaceRow">
+                        <div class="col-md-12">
+                            <label class="form-label">HuggingFace Checkpoint</label>
+                            <select class="form-select" id="checkpoint">
+                                <option value="google/timesfm-2.0-500m-pytorch" selected>google/timesfm-2.0-500m-pytorch</option>
+                                <option value="google/timesfm-2.0-500m-jax">google/timesfm-2.0-500m-jax</option>
+                            </select>
+                            <div class="form-text">Select the appropriate backend for your system</div>
+                        </div>
+                    </div>
+                    <!-- Local Model Path Row -->
                     <div class="row mt-3" id="localPathRow" style="display: none;">
                         <div class="col-md-12">
                             <label class="form-label">Local Model Path</label>
                             <input type="text" class="form-control" id="localPath" placeholder="/path/to/your/timesfm/model">
+                            <div class="form-text">Enter the full path to your locally stored TimesFM model</div>
                         </div>
                     </div>
                     <div class="mt-3">
@@ -110,14 +123,15 @@
                         </button>
                     </div>
                     <div class="col-md-6">
-                        <h6>Or Use Sample Data</h6>
+                        <h6>Data Requirements</h6>
                         <p class="text-muted">
-                            Generate synthetic financial data with Bitcoin, Ethereum, S&P 500, and VIX data.
+                            Your CSV file must contain:
                         </p>
-                        <button type="button" class="btn btn-outline-success" id="sampleBtn">
-                            <i class="fas fa-chart-area me-2"></i>
-                            Generate Sample Data
-                        </button>
+                        <ul class="text-muted">
+                            <li>A 'date' column as the first column</li>
+                            <li>At least one target time series column</li>
+                            <li>Optional: covariate columns for enhanced forecasting</li>
+                        </ul>
                     </div>
                 </div>
 
@@ -159,22 +173,7 @@
                                 </label>
                             </div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="useQuantiles">
-                                <label class="form-check-label" for="useQuantiles">
-                                    Quantile Forecasting
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="generateIntervals" checked>
-                                <label class="form-check-label" for="generateIntervals">
-                                    Prediction Intervals
-                                </label>
-                            </div>
-                        </div>
+                        <div class="col-md-8"></div>
                     </div>
                     <div class="mt-3">
                         <button type="submit" class="btn btn-warning text-dark" disabled id="forecastBtn">
@@ -232,6 +231,63 @@
                                 <i class="fas fa-download me-2"></i>
                                 Download Chart
                             </button>
+                            <button type="button" class="btn btn-outline-success ms-2" id="downloadData">
+                                <i class="fas fa-table me-2"></i>
+                                Download Data
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary ms-2" id="refreshPlot">
+                                <i class="fas fa-arrows-rotate me-2"></i>
+                                Refresh Plot
+                            </button>
+                        </div>
+                        <!-- Quantile selection (always visible) -->
+                        <div class="row mt-3" id="quantileSelector">
+                            <div class="col-12">
+                                <label class="form-label">Select quantiles to shade (choose lower and upper)</label>
+                                <div class="d-flex flex-wrap gap-2" id="quantileCheckboxes">
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="0" id="q0">
+                                        <label class="form-check-label" for="q0">0</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="1" id="q1" checked>
+                                        <label class="form-check-label" for="q1">1</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="2" id="q2">
+                                        <label class="form-check-label" for="q2">2</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="3" id="q3">
+                                        <label class="form-check-label" for="q3">3</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="4" id="q4">
+                                        <label class="form-check-label" for="q4">4</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="5" id="q5">
+                                        <label class="form-check-label" for="q5">5</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="6" id="q6">
+                                        <label class="form-check-label" for="q6">6</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="7" id="q7">
+                                        <label class="form-check-label" for="q7">7</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="8" id="q8">
+                                        <label class="form-check-label" for="q8">8</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input quantile-tick" type="checkbox" value="9" id="q9" checked>
+                                        <label class="form-check-label" for="q9">9</label>
+                                    </div>
+                                </div>
+                                <div class="form-text">Defaults approximate 10% and 90% bands when 10 quantiles are returned.</div>
+                            </div>
                         </div>
                     </div>
 

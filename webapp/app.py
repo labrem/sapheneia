@@ -101,45 +101,7 @@ def init_model(backend='cpu', context_len=100, horizon_len=24, checkpoint=None, 
         return False, f"Model initialization failed: {str(e)}"
 
 
-def create_sample_data():
-    """Create sample data for demonstration."""
-    np.random.seed(42)
-    num_periods = 150
-    
-    # Generate dates
-    start_date = datetime(2020, 1, 1)
-    dates = [start_date + timedelta(weeks=i) for i in range(num_periods)]
-    
-    # Generate synthetic financial data
-    btc_base = 25000
-    trend = np.linspace(0, 0.6, num_periods)
-    volatility = np.random.normal(0, 0.08, num_periods)
-    seasonal = 0.1 * np.sin(2 * np.pi * np.arange(num_periods) / 52)
-    btc_price = btc_base * np.exp(trend + volatility + seasonal)
-    
-    # Correlated assets
-    eth_price = btc_price * 0.06 * (1 + np.random.normal(0, 0.05, num_periods))
-    sp500_price = 3500 * np.exp(trend * 0.3 + np.random.normal(0, 0.02, num_periods))
-    vix_price = np.clip(20 - 2 * np.diff(np.log(btc_price), prepend=0) * 10 + 
-                       np.random.normal(0, 3, num_periods), 10, 80)
-    
-    # Categorical features
-    quarters = [(pd.Timestamp(d).month - 1) // 3 + 1 for d in dates]
-    market_regime = ['bull' if p > btc_base else 'bear' for p in btc_price]
-    
-    sample_df = pd.DataFrame({
-        'date': dates,
-        'btc_price': btc_price,
-        'eth_price': eth_price,
-        'sp500_price': sp500_price,
-        'vix_index': vix_price,
-        'quarter': quarters,
-        'market_regime': market_regime,
-        'asset_category': 'cryptocurrency',
-        'base_volatility': 0.08
-    })
-    
-    return sample_df
+# Sample data generation removed as per requirements
 
 
 @app.route('/')
@@ -196,77 +158,80 @@ def api_upload_data():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{timestamp}_{filename}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
         
-        # Load and analyze data
-        df = pd.read_csv(filepath)
-        df_info = {
-            'filename': filename,
-            'shape': df.shape,
-            'columns': df.columns.tolist(),
-            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
-            'head': df.head().to_dict('records'),
-            'null_counts': df.isnull().sum().to_dict()
-        }
-        
-        # Check for date column
-        has_date = 'date' in df.columns
-        if has_date:
-            df['date'] = pd.to_datetime(df['date'], errors='coerce')
-            df_info['date_range'] = {
-                'start': str(df['date'].min().date()) if not df['date'].isnull().all() else None,
-                'end': str(df['date'].max().date()) if not df['date'].isnull().all() else None,
-                'periods': len(df)
+        try:
+            file.save(filepath)
+            logger.info(f"File saved successfully: {filepath}")
+            
+            # Load and analyze data
+            df = pd.read_csv(filepath)
+            logger.info(f"CSV loaded successfully with shape: {df.shape}")
+            
+            # Convert data to JSON-serializable format
+            df_head = df.head()
+            head_records = []
+            for _, row in df_head.iterrows():
+                record = {}
+                for col in df.columns:
+                    value = row[col]
+                    if pd.isna(value):
+                        record[col] = None
+                    elif isinstance(value, (pd.Timestamp, datetime)):
+                        record[col] = str(value)
+                    elif isinstance(value, (np.integer, np.floating)):
+                        record[col] = float(value)
+                    else:
+                        record[col] = str(value)
+                head_records.append(record)
+            
+            df_info = {
+                'filename': filename,
+                'shape': list(df.shape),  # Convert tuple to list
+                'columns': df.columns.tolist(),
+                'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+                'head': head_records,
+                'null_counts': {col: int(count) for col, count in df.isnull().sum().items()}
             }
-        
-        return jsonify({
-            'success': True,
-            'message': 'File uploaded successfully',
-            'data_info': df_info,
-            'has_date_column': has_date
-        })
+            
+            # Check for date column
+            has_date = 'date' in df.columns
+            if has_date:
+                try:
+                    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+                    df_info['date_range'] = {
+                        'start': str(df['date'].min().date()) if not df['date'].isnull().all() else None,
+                        'end': str(df['date'].max().date()) if not df['date'].isnull().all() else None,
+                        'periods': len(df)
+                    }
+                except Exception as date_error:
+                    logger.warning(f"Date parsing failed: {date_error}")
+                    has_date = False
+            
+            logger.info(f"Data analysis completed. Has date column: {has_date}")
+            
+            # Create response
+            response_data = {
+                'success': True,
+                'message': 'File uploaded successfully',
+                'data_info': df_info,
+                'has_date_column': has_date
+            }
+            
+            logger.info(f"Sending response with keys: {list(response_data.keys())}")
+            return jsonify(response_data)
+            
+        except Exception as processing_error:
+            logger.error(f"File processing error: {processing_error}")
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            raise processing_error
         
     except Exception as e:
         logger.error(f"File upload error: {str(e)}")
         return jsonify({'success': False, 'message': f'Upload failed: {str(e)}'}), 500
 
 
-@app.route('/api/data/sample')
-def api_get_sample():
-    """Get sample data for demonstration."""
-    try:
-        sample_df = create_sample_data()
-        
-        # Save sample data
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"sample_data_{timestamp}.csv"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        sample_df.to_csv(filepath, index=False)
-        
-        # Return data info
-        df_info = {
-            'filename': filename,
-            'shape': sample_df.shape,
-            'columns': sample_df.columns.tolist(),
-            'dtypes': {col: str(dtype) for col, dtype in sample_df.dtypes.items()},
-            'head': sample_df.head().to_dict('records'),
-            'date_range': {
-                'start': str(sample_df['date'].min().date()),
-                'end': str(sample_df['date'].max().date()),
-                'periods': len(sample_df)
-            }
-        }
-        
-        return jsonify({
-            'success': True,
-            'message': 'Sample data generated',
-            'data_info': df_info,
-            'has_date_column': True
-        })
-        
-    except Exception as e:
-        logger.error(f"Sample data error: {str(e)}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+# Sample data generation API removed as per requirements
 
 
 @app.route('/api/forecast', methods=['POST'])
@@ -321,23 +286,10 @@ def api_forecast():
         # Perform forecasting
         results = {}
         
-        # Basic forecasting
-        point_forecast, _ = current_forecaster.forecast_basic(target_inputs, freq=0)
-        results['point_forecast'] = point_forecast[0].tolist()
-        
-        # Quantile forecasting if requested
-        if use_quantiles:
-            try:
-                _, quantile_forecast = current_forecaster.forecast_with_quantiles(target_inputs, freq=0)
-                if quantile_forecast is not None:
-                    results['quantile_forecast'] = quantile_forecast[0].tolist()
-            except:
-                pass
-        
-        # Covariates forecasting if requested
+        # Covariates forecasting if requested and available
         if use_covariates and any(covariates.values()):
             try:
-                enhanced_forecast, linear_forecast = current_forecaster.forecast_with_covariates(
+                enhanced_forecast, quantile_forecast = current_forecaster.forecast_with_covariates(
                     inputs=target_inputs,
                     dynamic_numerical_covariates=covariates.get('dynamic_numerical_covariates'),
                     dynamic_categorical_covariates=covariates.get('dynamic_categorical_covariates'),
@@ -346,25 +298,34 @@ def api_forecast():
                     freq=0
                 )
                 results['enhanced_forecast'] = enhanced_forecast[0].tolist()
-                results['linear_forecast'] = linear_forecast[0].tolist()
+                # Always compute quantiles via standard forecast regardless of covariates support
+                try:
+                    _, quantile_from_basic = current_forecaster.forecast(target_inputs, freq=0)
+                    if quantile_from_basic is not None:
+                        results['quantile_forecast'] = quantile_from_basic[0].tolist()
+                        logger.info(f"Quantiles (from basic forecast) shape: {quantile_from_basic.shape}")
+                    else:
+                        logger.warning("No quantiles returned from basic forecast while using covariates")
+                except Exception as qerr:
+                    logger.warning(f"Quantiles via basic forecast failed: {qerr}")
             except Exception as e:
                 logger.warning(f"Covariates forecasting failed: {str(e)}")
+                # Fallback to basic forecasting
+                use_covariates = False
         
-        # Generate prediction intervals
-        try:
-            intervals = current_forecaster.generate_prediction_intervals(
-                inputs=target_inputs,
-                freq=0,
-                covariates=covariates if use_covariates else None,
-                num_bootstrap_samples=50,
-                confidence_levels=[0.5, 0.8, 0.95]
-            )
-            
-            results['prediction_intervals'] = {}
-            for key, values in intervals.items():
-                results['prediction_intervals'][key] = values.tolist()
-        except Exception as e:
-            logger.warning(f"Prediction intervals failed: {str(e)}")
+        # Basic forecasting (if no covariates or covariates failed)
+        if not use_covariates or 'enhanced_forecast' not in results:
+            try:
+                point_forecast, quantile_forecast = current_forecaster.forecast(target_inputs, freq=0)
+                results['point_forecast'] = point_forecast[0].tolist()
+                if quantile_forecast is not None:
+                    results['quantile_forecast'] = quantile_forecast[0].tolist()
+                    logger.info(f"Quantile forecast shape: {quantile_forecast.shape}")
+                else:
+                    logger.warning("No quantile forecast returned from model")
+            except Exception as e:
+                logger.error(f"Basic forecasting failed: {str(e)}")
+                return jsonify({'success': False, 'message': f'Forecasting failed: {str(e)}'}), 500
         
         # Prepare visualization data
         historical_data = target_inputs
@@ -407,6 +368,7 @@ def api_visualize():
         data = request.get_json()
         viz_data = data.get('visualization_data', {})
         results = data.get('results', {})
+        selected_indices = data.get('quantile_indices', [])
         
         if not current_visualizer:
             return jsonify({'success': False, 'message': 'Visualizer not initialized'}), 400
@@ -427,8 +389,85 @@ def api_visualize():
         else:
             return jsonify({'success': False, 'message': 'No forecast data available'}), 400
         
-        # Prepare intervals
-        intervals = results.get('prediction_intervals', {})
+        # Build intervals only from quantile_forecast (authoritative)
+        intervals = {}
+        used_quantile_intervals = False
+        quantile_shape = None
+        if 'quantile_forecast' in results:
+            quantiles = np.array(results['quantile_forecast'])
+            # Ensure quantiles are sorted along the quantile axis ascending
+            try:
+                if quantiles.ndim == 2:
+                    # Sort columns by their median value across horizon to enforce order if needed
+                    if quantiles.shape[1] < quantiles.shape[0]:
+                        # shape (horizon, num_q)
+                        order = np.argsort(np.nanmedian(quantiles, axis=0))
+                        quantiles = quantiles[:, order]
+                    else:
+                        # shape (num_q, horizon)
+                        order = np.argsort(np.nanmedian(quantiles, axis=1))
+                        quantiles = quantiles[order, :]
+            except Exception as e:
+                logger.warning(f"Could not sort quantiles by magnitude: {e}")
+
+            try:
+                quantile_shape = list(quantiles.shape)
+                logger.info(f"Quantile forecast shape received for viz: {quantile_shape}")
+            except Exception:
+                pass
+            # Robust mapping across shapes
+            if quantiles.ndim == 2:
+                # Determine which axis indexes quantile levels
+                # Prefer shape (horizon, num_q); if (num_q, horizon) transpose
+                if quantiles.shape[1] < quantiles.shape[0]:
+                    q_mat = quantiles
+                else:
+                    q_mat = quantiles.T  # Make shape (horizon, num_q)
+
+                num_q = q_mat.shape[1]
+                
+                # Map quantile index to display percent label e.g., 1->Q10, 9->Q90 assuming 0..9
+                def idx_to_percent(idx: int) -> int:
+                    if num_q == 10:
+                        return idx * 10
+                    return int(round(100 * (idx / (num_q - 1))))
+
+                # Create multiple quantile bands based on user selection
+                if isinstance(selected_indices, list) and len(selected_indices) >= 2:
+                    selected_sorted = sorted([i for i in selected_indices if 0 <= i < num_q])
+                    if len(selected_sorted) >= 2:
+                        # Create bands for each pair of consecutive selected quantiles
+                        for i in range(len(selected_sorted) - 1):
+                            lower_idx = selected_sorted[i]
+                            upper_idx = selected_sorted[i + 1]
+                            band_name = f'quantile_band_{i}'
+                            intervals[f'{band_name}_lower'] = q_mat[:, lower_idx].tolist()
+                            intervals[f'{band_name}_upper'] = q_mat[:, upper_idx].tolist()
+                            intervals[f'{band_name}_label'] = f"Q{idx_to_percent(lower_idx)}–Q{idx_to_percent(upper_idx)}"
+                        used_quantile_intervals = True
+                        logger.info(f"Created {len(selected_sorted)-1} quantile bands from user selection: {selected_sorted}")
+                
+                # Fallback to default bands if no user selection or invalid selection
+                if not used_quantile_intervals:
+                    default_pairs = []
+                    if num_q >= 10:
+                        default_pairs = [(1,9),(2,8),(3,7),(4,6)]
+                    elif num_q >= 5:
+                        default_pairs = [(0,num_q-1)]
+                        if num_q >= 3:
+                            mid = num_q // 2
+                            default_pairs += [(0,mid),(mid,num_q-1)]
+                    for i,(li,ui) in enumerate(default_pairs):
+                        intervals[f'quantile_band_{i}_lower'] = q_mat[:, li].tolist()
+                        intervals[f'quantile_band_{i}_upper'] = q_mat[:, ui].tolist()
+                        intervals[f'quantile_band_{i}_label'] = f"Q{idx_to_percent(li)}–Q{idx_to_percent(ui)}"
+                    used_quantile_intervals = len(default_pairs) > 0
+                    logger.info(f"Created default quantile bands for {num_q} quantiles: {default_pairs}")
+
+            elif quantiles.ndim == 1:
+                # Single series; treat as median-only info
+                intervals = {'median_forecast': quantiles.tolist()}
+                used_quantile_intervals = False
         
         # Generate plot
         fig = current_visualizer.plot_forecast_with_intervals(
@@ -451,7 +490,9 @@ def api_visualize():
         return jsonify({
             'success': True,
             'message': 'Visualization generated successfully',
-            'image': img_base64
+            'image': img_base64,
+            'used_quantile_intervals': used_quantile_intervals,
+            'quantile_shape': quantile_shape
         })
         
     except Exception as e:

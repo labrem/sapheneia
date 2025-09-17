@@ -19,8 +19,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import seaborn as sns
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Union, Tuple, Any
+from datetime import datetime
+from typing import List, Dict, Optional, Union
 import logging
 
 logger = logging.getLogger(__name__)
@@ -165,33 +165,83 @@ class Visualizer:
         
         connection_forecast = [historical_data[-1]] + list(forecast)
         
-        # Plot prediction intervals if available
+        # Plot quantile intervals if available
         if intervals:
-            # Sort confidence levels
-            conf_levels = []
-            for key in intervals.keys():
-                if key.startswith('lower_'):
-                    conf_level = key.split('_')[1]
-                    if f'upper_{conf_level}' in intervals:
-                        conf_levels.append(int(conf_level))
-            
-            conf_levels.sort(reverse=True)  # Largest first for layering
-            
-            for conf_level in conf_levels:
-                lower_key = f'lower_{conf_level}'
-                upper_key = f'upper_{conf_level}'
+            # Handle different types of intervals
+            if 'lower_80' in intervals and 'upper_80' in intervals:
+                # Traditional confidence intervals
+                interval_lower = [historical_data[-1]] + list(intervals['lower_80'])
+                interval_upper = [historical_data[-1]] + list(intervals['upper_80'])
                 
-                if lower_key in intervals and upper_key in intervals:
-                    # Create seamless intervals
-                    interval_lower = [historical_data[-1]] + list(intervals[lower_key])
-                    interval_upper = [historical_data[-1]] + list(intervals[upper_key])
+                ax.fill_between(connection_x, interval_lower, interval_upper, 
+                               alpha=0.3, color=self.colors['interval_80'], 
+                               label='80% Quantile Interval', zorder=1)
+                               
+                # Add 50% interval if available
+                if 'lower_50' in intervals and 'upper_50' in intervals:
+                    interval_lower_50 = [historical_data[-1]] + list(intervals['lower_50'])
+                    interval_upper_50 = [historical_data[-1]] + list(intervals['upper_50'])
                     
-                    alpha = 0.3 if conf_level == max(conf_levels) else 0.5
-                    color = self.colors['interval_80'] if conf_level >= 80 else self.colors['interval_50']
+                    ax.fill_between(connection_x, interval_lower_50, interval_upper_50, 
+                                   alpha=0.5, color=self.colors['interval_50'], 
+                                   label='50% Quantile Interval', zorder=2)
+            
+            else:
+                # Check for generic confidence levels
+                conf_levels = []
+                for key in intervals.keys():
+                    if key.startswith('lower_'):
+                        conf_level = key.split('_')[1]
+                        if f'upper_{conf_level}' in intervals:
+                            conf_levels.append(int(conf_level))
+                
+                conf_levels.sort(reverse=True)  # Largest first for layering
+                
+                for conf_level in conf_levels:
+                    lower_key = f'lower_{conf_level}'
+                    upper_key = f'upper_{conf_level}'
+                    
+                    if lower_key in intervals and upper_key in intervals:
+                        # Create seamless intervals
+                        interval_lower = [historical_data[-1]] + list(intervals[lower_key])
+                        interval_upper = [historical_data[-1]] + list(intervals[upper_key])
+                        
+                        alpha = 0.3 if conf_level == max(conf_levels) else 0.5
+                        color = self.colors['interval_80'] if conf_level >= 80 else self.colors['interval_50']
+                        
+                        ax.fill_between(connection_x, interval_lower, interval_upper, 
+                                       alpha=alpha, color=color, 
+                                       label=f'{conf_level}% Quantile Interval', zorder=1)
+            
+            # Handle quantile bands (new format)
+            quantile_bands = {}
+            for key in intervals.keys():
+                if key.startswith('quantile_band_') and key.endswith('_lower'):
+                    band_name = key.replace('quantile_band_', '').replace('_lower', '')
+                    upper_key = f'quantile_band_{band_name}_upper'
+                    if upper_key in intervals:
+                        quantile_bands[band_name] = {
+                            'lower': intervals[key],
+                            'upper': intervals[upper_key]
+                        }
+            
+            if quantile_bands:
+                # Define colors for different bands
+                band_colors = ['#ff9999', '#99ccff', '#99ff99', '#ffcc99', '#cc99ff', '#ffff99']
+                
+                for i, (band_name, band_data) in enumerate(sorted(quantile_bands.items())):
+                    color = band_colors[i % len(band_colors)]
+                    alpha = 0.3 + (0.2 * (1 - i / max(1, len(quantile_bands) - 1)))  # Vary alpha
+                    
+                    interval_lower = [historical_data[-1]] + list(band_data['lower'])
+                    interval_upper = [historical_data[-1]] + list(band_data['upper'])
+                    
+                    label_key = f'quantile_band_{band_name}_label'
+                    label_text = intervals.get(label_key, f'Quantile Band {int(band_name)+1}')
                     
                     ax.fill_between(connection_x, interval_lower, interval_upper, 
                                    alpha=alpha, color=color, 
-                                   label=f'{conf_level}% Prediction Interval', zorder=1)
+                                   label=label_text, zorder=1)
         
         # Plot forecast line
         ax.plot(connection_x, connection_forecast, 
