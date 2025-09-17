@@ -196,4 +196,4 @@ cython_debug/
 # Custom files
 CLAUDE.md
 GEMINI.md
-.local/
+local/
