@@ -394,3 +394,59 @@ class DataProcessor:
         logger.info(f"Sample data definition saved to: {output_path}")
         print(f"Sample data definition structure:")
         print(json.dumps(sample_definition, indent=2))
+
+
+def prepare_visualization_data(
+    processed_data: pd.DataFrame,
+    target_inputs: List[List[float]],
+    target_column: str,
+    context_len: int,
+    horizon_len: int
+) -> Dict[str, Any]:
+    """
+    Centralized function to prepare visualization data from processed data.
+    
+    This function creates the visualization data structure used by both
+    the webapp and notebook for consistent data handling.
+    
+    Args:
+        processed_data: Processed DataFrame with date column
+        target_inputs: Target input data for forecasting
+        target_column: Name of the target column
+        context_len: Context length used for forecasting
+        horizon_len: Horizon length for forecasting
+        
+    Returns:
+        Dictionary containing visualization data with keys:
+        - 'historical_data': Target input data
+        - 'dates_historical': Historical dates
+        - 'dates_future': Future dates for forecast
+        - 'target_name': Name of the target column
+    """
+    from datetime import timedelta
+    
+    # Prepare historical data
+    historical_data = target_inputs
+    
+    # Get historical dates
+    dates_historical = processed_data['date'].iloc[:context_len].tolist()
+    
+    # Generate future dates
+    if len(processed_data) > context_len + horizon_len:
+        dates_future = processed_data['date'].iloc[context_len:context_len + horizon_len].tolist()
+    else:
+        # Fallback: generate future dates
+        last_date = dates_historical[-1]
+        if hasattr(last_date, 'to_pydatetime'):
+            last_date = last_date.to_pydatetime()
+        dates_future = [last_date + timedelta(weeks=i+1) for i in range(horizon_len)]
+    
+    # Convert dates to strings for JSON serialization
+    visualization_data = {
+        'historical_data': historical_data,
+        'dates_historical': [d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in dates_historical],
+        'dates_future': [d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in dates_future],
+        'target_name': target_column
+    }
+    
+    return visualization_data

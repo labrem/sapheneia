@@ -60,6 +60,9 @@ class SapheneiaTimesFM {
                 this.showAlert('warning', 'No Results', 'Run a forecast first.');
             }
         });
+
+        // Tab switching - preserve scroll position
+        this.setupTabSwitching();
     }
 
     setupFormValidation() {
@@ -361,7 +364,16 @@ class SapheneiaTimesFM {
                 }
             } else {
                 console.log('Upload failed, showing error:', result.message);
-                this.showAlert('danger', 'Upload Failed', result.message || 'Upload failed');
+                
+                // Handle forecast output data error specially
+                if (result.is_forecast_output) {
+                    const suggestedColumns = result.suggested_columns ? result.suggested_columns.join(', ') : 'date, value, price, amount, count, sales, revenue';
+                    this.showAlert('warning', 'Wrong Data Type', 
+                        `${result.message}<br><br><strong>Expected columns:</strong> ${suggestedColumns}<br><br>` +
+                        'Please upload your original time series data, not forecast output data.');
+                } else {
+                    this.showAlert('danger', 'Upload Failed', result.message || 'Upload failed');
+                }
             }
         } catch (error) {
             console.error('Upload error:', error);
@@ -535,10 +547,23 @@ class SapheneiaTimesFM {
             const result = await response.json();
 
             if (result.success) {
+                console.log('Forecast successful, proceeding to display and visualize...');
                 this.currentResults = result;
                 this.showAlert('success', 'Forecast Complete', 'Forecasting completed successfully!');
-                await this.displayResults(result);
-                this.generateVisualization(result);
+                
+                try {
+                    await this.displayResults(result);
+                    console.log('displayResults completed successfully');
+                } catch (displayError) {
+                    console.error('Error in displayResults:', displayError);
+                }
+                
+                console.log('About to call generateVisualization...');
+                try {
+                    this.generateVisualization(result);
+                } catch (vizError) {
+                    console.error('Error calling generateVisualization:', vizError);
+                }
             } else {
                 this.showAlert('danger', 'Forecast Failed', result.message || 'Forecasting failed');
             }
@@ -613,15 +638,27 @@ class SapheneiaTimesFM {
         summary.methods_used.forEach(method => {
             const methodName = method.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
             const forecast = results[method];
-            const minVal = Math.min(...forecast);
-            const maxVal = Math.max(...forecast);
             
-            html += `
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    ${methodName}
-                    <span class="badge bg-secondary">$${minVal.toLocaleString()} - $${maxVal.toLocaleString()}</span>
-                </li>
-            `;
+            // Check if forecast is an array and has numeric values
+            if (Array.isArray(forecast) && forecast.length > 0 && typeof forecast[0] === 'number') {
+                const minVal = Math.min(...forecast);
+                const maxVal = Math.max(...forecast);
+                
+                html += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        ${methodName}
+                        <span class="badge bg-secondary">$${minVal.toLocaleString()} - $${maxVal.toLocaleString()}</span>
+                    </li>
+                `;
+            } else {
+                // Fallback for non-array or non-numeric data
+                html += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        ${methodName}
+                        <span class="badge bg-secondary">Available</span>
+                    </li>
+                `;
+            }
         });
 
         html += `
@@ -680,6 +717,7 @@ class SapheneiaTimesFM {
     }
 
     async generateVisualization(result) {
+        console.log('generateVisualization called with result:', result);
         this.showLoading('Generating Chart', 'Creating professional forecast visualization...');
 
         try {
@@ -705,10 +743,19 @@ class SapheneiaTimesFM {
             const vizResult = await response.json();
 
             if (vizResult.success) {
+                console.log('Visualization successful, setting image...');
                 const chartImg = document.getElementById('forecastChart');
+                
+                if (!chartImg) {
+                    console.error('Chart image element not found!');
+                    this.showAlert('danger', 'Display Error', 'Chart display element not found');
+                    return;
+                }
+                
                 // Scroll to results after the image has fully rendered
                 try {
                     chartImg.onload = () => {
+                        console.log('Chart image loaded successfully');
                         const resultsCard = document.getElementById('resultsCard');
                         if (resultsCard) {
                             resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -716,7 +763,13 @@ class SapheneiaTimesFM {
                         // Clean up the onload handler to avoid duplicate triggers
                         chartImg.onload = null;
                     };
+                    
+                    chartImg.onerror = () => {
+                        console.error('Chart image failed to load');
+                        this.showAlert('danger', 'Image Load Error', 'Failed to load chart image');
+                    };
                 } catch (e) {
+                    console.error('Error setting up image handlers:', e);
                     // Fallback: delayed scroll
                     setTimeout(() => {
                         const resultsCard = document.getElementById('resultsCard');
@@ -725,9 +778,14 @@ class SapheneiaTimesFM {
                         }
                     }, 150);
                 }
-                chartImg.src = 'data:image/png;base64,' + vizResult.image;
+                
+                const imageSrc = 'data:image/png;base64,' + vizResult.image;
+                console.log('Setting image source, length:', imageSrc.length);
+                chartImg.src = imageSrc;
                 chartImg.style.display = 'block';
+                console.log('Image source set, display style set to block');
             } else {
+                console.error('Visualization failed:', vizResult.message);
                 this.showAlert('warning', 'Visualization Failed', vizResult.message || 'Failed to generate chart');
             }
         } catch (error) {
@@ -772,32 +830,18 @@ class SapheneiaTimesFM {
         // Create CSV content
         let csvContent = 'Period,Point_Forecast';
         
-        // Add quantile columns
-        const quantileKeys = Object.keys(results).filter(key => 
-            key.includes('quantile_band_') && key.endsWith('_lower')
-        );
-        
-        // Sort quantile bands by band number
-        const sortedQuantileKeys = quantileKeys.sort((a, b) => {
-            const aNum = parseInt(a.match(/quantile_band_(\d+)_lower/)[1]);
-            const bNum = parseInt(b.match(/quantile_band_(\d+)_lower/)[1]);
-            return aNum - bNum;
-        });
-
-        // Add column headers for quantile bands
-        sortedQuantileKeys.forEach(key => {
-            const bandNum = key.match(/quantile_band_(\d+)_lower/)[1];
-            csvContent += `,Quantile_Band_${parseInt(bandNum)+1}_Lower,Quantile_Band_${parseInt(bandNum)+1}_Upper`;
-        });
-
-        // Add other forecast methods
-        Object.keys(results).forEach(method => {
-            if (!method.includes('quantile_band_') && method !== 'point_forecast' && 
-                method !== 'enhanced_forecast' && Array.isArray(results[method])) {
-                const methodName = method.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-                csvContent += `,${methodName}`;
+        // Add raw quantile columns (skip index 0 - legacy mean)
+        if (results.quantile_forecast && Array.isArray(results.quantile_forecast)) {
+            const numQuantiles = results.quantile_forecast[0] ? results.quantile_forecast[0].length : 0;
+            // Skip index 0 (legacy mean), add Q10, Q20, Q30, Q40, Q50, Q60, Q70, Q80, Q90
+            for (let i = 1; i < numQuantiles; i++) {
+                const percentile = i * 10; // 1->Q10, 2->Q20, etc.
+                csvContent += `,Q${percentile}`;
             }
-        });
+        }
+        
+        // Only include Period, Point_Forecast, and Q10-Q90 columns
+        // No additional columns needed
 
         csvContent += '\n';
 
@@ -809,26 +853,19 @@ class SapheneiaTimesFM {
             const pointForecast = results.enhanced_forecast || results.point_forecast;
             csvContent += `,${pointForecast[i]}`;
             
-            // Quantile bands
-            sortedQuantileKeys.forEach(key => {
-                const upperKey = key.replace('_lower', '_upper');
-                const lowerValues = results[key];
-                const upperValues = results[upperKey];
-                
-                if (lowerValues && upperValues && lowerValues[i] !== undefined && upperValues[i] !== undefined) {
-                    csvContent += `,${lowerValues[i]},${upperValues[i]}`;
-                } else {
-                    csvContent += `,,`;
+            // Raw quantiles (skip index 0 - legacy mean)
+            if (results.quantile_forecast && Array.isArray(results.quantile_forecast)) {
+                const quantileRow = results.quantile_forecast[i];
+                if (quantileRow && Array.isArray(quantileRow)) {
+                    // Skip index 0, add Q10, Q20, Q30, Q40, Q50, Q60, Q70, Q80, Q90
+                    for (let j = 1; j < quantileRow.length; j++) {
+                        csvContent += `,${quantileRow[j]}`;
+                    }
                 }
-            });
+            }
             
-            // Other forecast methods
-            Object.entries(results).forEach(([method, values]) => {
-                if (!method.includes('quantile_band_') && method !== 'point_forecast' && 
-                    method !== 'enhanced_forecast' && Array.isArray(values) && values[i] !== undefined) {
-                    csvContent += `,${values[i]}`;
-                }
-            });
+            // Only include Period, Point_Forecast, and Q10-Q90 data
+            // No additional data needed
             
             csvContent += '\n';
         }
@@ -845,6 +882,55 @@ class SapheneiaTimesFM {
         document.body.removeChild(link);
 
         this.showAlert('success', 'Download Started', 'Forecast data download has started.');
+    }
+
+    setupTabSwitching() {
+        // Store scroll position when switching away from visualization tab
+        const visualizationTab = document.getElementById('visualization-tab');
+        const summaryTab = document.getElementById('summary-tab');
+        const dataTab = document.getElementById('data-tab');
+        
+        // Store scroll position when leaving visualization tab
+        visualizationTab.addEventListener('hidden.bs.tab', () => {
+            this.visualizationScrollPosition = window.pageYOffset;
+        });
+        
+        // Restore scroll position when returning to visualization tab
+        visualizationTab.addEventListener('shown.bs.tab', () => {
+            if (this.visualizationScrollPosition !== undefined) {
+                setTimeout(() => {
+                    window.scrollTo(0, this.visualizationScrollPosition);
+                }, 100); // Small delay to ensure content is rendered
+            }
+        });
+        
+        // Store scroll position when leaving summary tab
+        summaryTab.addEventListener('hidden.bs.tab', () => {
+            this.summaryScrollPosition = window.pageYOffset;
+        });
+        
+        // Restore scroll position when returning to summary tab
+        summaryTab.addEventListener('shown.bs.tab', () => {
+            if (this.summaryScrollPosition !== undefined) {
+                setTimeout(() => {
+                    window.scrollTo(0, this.summaryScrollPosition);
+                }, 100);
+            }
+        });
+        
+        // Store scroll position when leaving data tab
+        dataTab.addEventListener('hidden.bs.tab', () => {
+            this.dataScrollPosition = window.pageYOffset;
+        });
+        
+        // Restore scroll position when returning to data tab
+        dataTab.addEventListener('shown.bs.tab', () => {
+            if (this.dataScrollPosition !== undefined) {
+                setTimeout(() => {
+                    window.scrollTo(0, this.dataScrollPosition);
+                }, 100);
+            }
+        });
     }
 }
 

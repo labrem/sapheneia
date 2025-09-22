@@ -35,9 +35,9 @@ import tempfile
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Import Sapheneia TimesFM modules
-from model import TimesFMModel
-from data import DataProcessor
-from forecast import Forecaster
+from model import TimesFMModel, initialize_timesfm_model
+from data import DataProcessor, prepare_visualization_data
+from forecast import Forecaster, run_forecast, process_quantile_bands
 from visualization import Visualizer
 
 # Configure logging
@@ -73,25 +73,21 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def init_model(backend='cpu', context_len=100, horizon_len=24, checkpoint=None, local_path=None):
-    """Initialize TimesFM model with given parameters."""
+def init_model(backend='cpu', context_len=64, horizon_len=24, checkpoint=None, local_path=None):
+    """Initialize TimesFM model with given parameters using centralized function."""
     global current_model, current_forecaster, current_visualizer
     
     try:
         logger.info(f"Initializing model with backend={backend}, context={context_len}, horizon={horizon_len}")
         
-        model_wrapper = TimesFMModel(
+        # Use centralized model initialization
+        current_model, current_forecaster, current_visualizer = initialize_timesfm_model(
             backend=backend,
             context_len=context_len,
             horizon_len=horizon_len,
             checkpoint=checkpoint,
             local_model_path=local_path
         )
-        
-        timesfm_model = model_wrapper.load_model()
-        current_model = model_wrapper
-        current_forecaster = Forecaster(timesfm_model)
-        current_visualizer = Visualizer(style="professional")
         
         logger.info("Model initialized successfully")
         return True, "Model initialized successfully"
@@ -117,7 +113,7 @@ def api_init_model():
         data = request.get_json()
         
         backend = data.get('backend', 'cpu')
-        context_len = int(data.get('context_len', 100))
+        context_len = int(data.get('context_len', 64))
         horizon_len = int(data.get('horizon_len', 24))
         checkpoint = data.get('checkpoint')
         local_path = data.get('local_path')
@@ -207,6 +203,24 @@ def api_upload_data():
                     logger.warning(f"Date parsing failed: {date_error}")
                     has_date = False
             
+            # Check if this looks like forecast output data instead of time series data
+            forecast_output_indicators = [
+                'period', 'point_forecast', 'quantile_forecast', 'forecast', 
+                'prediction', 'forecast_lower', 'forecast_upper', 'quantile'
+            ]
+            
+            column_names_lower = [col.lower() for col in df.columns]
+            is_forecast_output = any(indicator in ' '.join(column_names_lower) for indicator in forecast_output_indicators)
+            
+            if is_forecast_output:
+                logger.warning("Detected forecast output data instead of time series data")
+                return jsonify({
+                    'success': False, 
+                    'message': 'This appears to be forecast output data, not time series input data. Please upload your original time series data with a "date" column and numeric value columns.',
+                    'is_forecast_output': True,
+                    'suggested_columns': ['date', 'value', 'price', 'amount', 'count', 'sales', 'revenue']
+                }), 400
+            
             logger.info(f"Data analysis completed. Has date column: {has_date}")
             
             # Create response
@@ -231,7 +245,93 @@ def api_upload_data():
         return jsonify({'success': False, 'message': f'Upload failed: {str(e)}'}), 500
 
 
-# Sample data generation API removed as per requirements
+@app.route('/api/sample_data', methods=['POST'])
+def api_sample_data():
+    """Generate sample time series data for testing."""
+    try:
+        data = request.get_json()
+        data_type = data.get('type', 'financial')
+        periods = int(data.get('periods', 100))
+        
+        # Generate sample data
+        dates = pd.date_range(start='2020-01-01', periods=periods, freq='D')
+        
+        if data_type == 'financial':
+            # Generate financial time series (like stock prices)
+            np.random.seed(42)
+            base_price = 100
+            returns = np.random.normal(0.001, 0.02, periods)  # Daily returns
+            prices = [base_price]
+            for ret in returns[1:]:
+                prices.append(prices[-1] * (1 + ret))
+            
+            sample_data = pd.DataFrame({
+                'date': dates,
+                'price': prices,
+                'volume': np.random.randint(1000, 10000, periods),
+                'volatility': np.random.uniform(0.1, 0.3, periods)
+            })
+            
+        elif data_type == 'sales':
+            # Generate sales data
+            np.random.seed(42)
+            trend = np.linspace(100, 150, periods)
+            seasonal = 20 * np.sin(2 * np.pi * np.arange(periods) / 365.25)
+            noise = np.random.normal(0, 5, periods)
+            sales = trend + seasonal + noise
+            
+            sample_data = pd.DataFrame({
+                'date': dates,
+                'sales': sales,
+                'customers': np.random.randint(50, 200, periods),
+                'marketing_spend': np.random.uniform(1000, 5000, periods)
+            })
+            
+        else:
+            # Generate generic time series
+            np.random.seed(42)
+            trend = np.linspace(0, 100, periods)
+            seasonal = 10 * np.sin(2 * np.pi * np.arange(periods) / 30)
+            noise = np.random.normal(0, 2, periods)
+            values = trend + seasonal + noise
+            
+            sample_data = pd.DataFrame({
+                'date': dates,
+                'value': values,
+                'category': np.random.choice(['A', 'B', 'C'], periods),
+                'score': np.random.uniform(0, 100, periods)
+            })
+        
+        # Save sample data
+        filename = f"sample_{data_type}_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        sample_data.to_csv(filepath, index=False)
+        
+        # Return data info
+        df_info = {
+            'filename': filename,
+            'shape': list(sample_data.shape),
+            'columns': sample_data.columns.tolist(),
+            'dtypes': {col: str(dtype) for col, dtype in sample_data.dtypes.items()},
+            'head': sample_data.head().to_dict('records'),
+            'null_counts': {col: int(count) for col, count in sample_data.isnull().sum().items()},
+            'date_range': {
+                'start': str(sample_data['date'].min().date()),
+                'end': str(sample_data['date'].max().date()),
+                'periods': len(sample_data)
+            }
+        }
+        
+        return jsonify({
+            'success': True,
+            'message': f'Sample {data_type} data generated successfully',
+            'data_info': df_info,
+            'has_date_column': True
+        })
+        
+    except Exception as e:
+        logger.error(f"Sample data generation error: {str(e)}")
+        return jsonify({'success': False, 'message': f'Sample data generation failed: {str(e)}'}), 500
 
 
 @app.route('/api/forecast', methods=['POST'])
@@ -246,7 +346,7 @@ def api_forecast():
         data_definition = data.get('data_definition', {})
         use_covariates = data.get('use_covariates', False)
         use_quantiles = data.get('use_quantiles', False)
-        context_len = int(data.get('context_len', 100))
+        context_len = int(data.get('context_len', 64))
         horizon_len = int(data.get('horizon_len', 24))
         
         if not filename:
@@ -283,64 +383,70 @@ def api_forecast():
             processed_data, context_len, horizon_len, target_column
         )
         
-        # Perform forecasting
-        results = {}
-        
-        # Covariates forecasting if requested and available
-        if use_covariates and any(covariates.values()):
-            try:
-                enhanced_forecast, quantile_forecast = current_forecaster.forecast_with_covariates(
-                    inputs=target_inputs,
-                    dynamic_numerical_covariates=covariates.get('dynamic_numerical_covariates'),
-                    dynamic_categorical_covariates=covariates.get('dynamic_categorical_covariates'),
-                    static_numerical_covariates=covariates.get('static_numerical_covariates'),
-                    static_categorical_covariates=covariates.get('static_categorical_covariates'),
-                    freq=0
-                )
-                results['enhanced_forecast'] = enhanced_forecast[0].tolist()
-                # Always compute quantiles via standard forecast regardless of covariates support
-                try:
-                    _, quantile_from_basic = current_forecaster.forecast(target_inputs, freq=0)
-                    if quantile_from_basic is not None:
-                        results['quantile_forecast'] = quantile_from_basic[0].tolist()
-                        logger.info(f"Quantiles (from basic forecast) shape: {quantile_from_basic.shape}")
+        # Perform forecasting using centralized function
+        try:
+            # Ensure target_inputs is in the correct format (list of lists)
+            if isinstance(target_inputs[0], (int, float)):
+                target_inputs_formatted = [target_inputs]
+            else:
+                target_inputs_formatted = target_inputs
+            
+            results = run_forecast(
+                forecaster=current_forecaster,
+                target_inputs=target_inputs_formatted,
+                covariates=covariates if use_covariates and any(covariates.values()) else None,
+                use_covariates=use_covariates and any(covariates.values()),
+                freq=0
+            )
+            
+            # Check for NaN values before JSON serialization
+            for key, value in results.items():
+                if isinstance(value, np.ndarray):
+                    if np.any(np.isnan(value)):
+                        logger.error(f"❌ NaN values detected in {key}: {np.isnan(value).sum()} out of {value.size}")
+                        return jsonify({
+                            'success': False, 
+                            'message': f'Forecasting failed: Invalid values (NaN) detected in {key}. This may be due to insufficient data or model issues.'
+                        }), 500
+                    
+                    if key == 'quantile_forecast':
+                        # For quantiles, keep the full array structure
+                        if value.ndim == 3:
+                            results[key] = value[0].tolist()  # (1, horizon, quantiles) -> (horizon, quantiles)
+                        else:
+                            results[key] = value.tolist()
+                    elif value.ndim > 1:
+                        results[key] = value[0].tolist()  # Take first series if batch
                     else:
-                        logger.warning("No quantiles returned from basic forecast while using covariates")
-                except Exception as qerr:
-                    logger.warning(f"Quantiles via basic forecast failed: {qerr}")
-            except Exception as e:
-                logger.warning(f"Covariates forecasting failed: {str(e)}")
-                # Fallback to basic forecasting
-                use_covariates = False
+                        results[key] = value.tolist()
+                elif isinstance(value, (list, tuple)):
+                    # Check for NaN in lists/tuples
+                    if any(isinstance(x, float) and np.isnan(x) for x in value):
+                        logger.error(f"❌ NaN values detected in {key} list")
+                        return jsonify({
+                            'success': False, 
+                            'message': f'Forecasting failed: Invalid values (NaN) detected in {key}. This may be due to insufficient data or model issues.'
+                        }), 500
+            
+            logger.info(f"✅ Centralized forecasting completed. Methods: {list(results.keys())}")
+            logger.info(f"Results structure: {[(k, type(v), len(v) if hasattr(v, '__len__') else 'N/A') for k, v in results.items()]}")
+            if 'quantile_forecast' in results:
+                logger.info(f"Quantile forecast shape: {results['quantile_forecast'].shape if hasattr(results['quantile_forecast'], 'shape') else 'N/A'}")
+            else:
+                logger.warning("No quantile_forecast in results!")
+            
+        except Exception as e:
+            logger.error(f"Centralized forecasting failed: {str(e)}")
+            return jsonify({'success': False, 'message': f'Forecasting failed: {str(e)}'}), 500
         
-        # Basic forecasting (if no covariates or covariates failed)
-        if not use_covariates or 'enhanced_forecast' not in results:
-            try:
-                point_forecast, quantile_forecast = current_forecaster.forecast(target_inputs, freq=0)
-                results['point_forecast'] = point_forecast[0].tolist()
-                if quantile_forecast is not None:
-                    results['quantile_forecast'] = quantile_forecast[0].tolist()
-                    logger.info(f"Quantile forecast shape: {quantile_forecast.shape}")
-                else:
-                    logger.warning("No quantile forecast returned from model")
-            except Exception as e:
-                logger.error(f"Basic forecasting failed: {str(e)}")
-                return jsonify({'success': False, 'message': f'Forecasting failed: {str(e)}'}), 500
-        
-        # Prepare visualization data
-        historical_data = target_inputs
-        dates_historical = processed_data['date'].iloc[:context_len].tolist()
-        dates_future = processed_data['date'].iloc[context_len:context_len + horizon_len].tolist() \
-                      if len(processed_data) > context_len + horizon_len else \
-                      [dates_historical[-1] + timedelta(weeks=i+1) for i in range(horizon_len)]
-        
-        # Convert dates to strings for JSON serialization
-        visualization_data = {
-            'historical_data': historical_data,
-            'dates_historical': [d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in dates_historical],
-            'dates_future': [d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in dates_future],
-            'target_name': target_column
-        }
+        # Prepare visualization data using centralized function
+        visualization_data = prepare_visualization_data(
+            processed_data=processed_data,
+            target_inputs=target_inputs,
+            target_column=target_column,
+            context_len=context_len,
+            horizon_len=horizon_len
+        )
         
         return jsonify({
             'success': True,
@@ -379,113 +485,85 @@ def api_visualize():
         dates_future = [pd.to_datetime(d) for d in viz_data.get('dates_future', [])]
         target_name = viz_data.get('target_name', 'Value')
         
+        # Debug logging
+        logger.info(f"Visualization data - historical_data length: {len(historical_data)}")
+        logger.info(f"Visualization data - dates_historical length: {len(dates_historical)}")
+        logger.info(f"Visualization data - dates_future length: {len(dates_future)}")
+        logger.info(f"Visualization data - target_name: {target_name}")
+        logger.info(f"Results keys: {list(results.keys())}")
+        
         # Choose best forecast
-        if 'enhanced_forecast' in results:
-            forecast = results['enhanced_forecast']
-            title = f"{target_name} Forecast with Covariates Enhancement"
-        elif 'point_forecast' in results:
+        if 'point_forecast' in results:
             forecast = results['point_forecast']
-            title = f"{target_name} Forecast (TimesFM)"
+            if results.get('method') == 'covariates_enhanced':
+                title = f"{target_name} Forecast with Covariates Enhancement"
+            else:
+                title = f"{target_name} Forecast (TimesFM)"
         else:
             return jsonify({'success': False, 'message': 'No forecast data available'}), 400
         
-        # Build intervals only from quantile_forecast (authoritative)
+        # Process quantile bands using centralized function
         intervals = {}
         used_quantile_intervals = False
         quantile_shape = None
+        
+        logger.info(f"Available results keys: {list(results.keys())}")
         if 'quantile_forecast' in results:
-            quantiles = np.array(results['quantile_forecast'])
-            # Ensure quantiles are sorted along the quantile axis ascending
             try:
-                if quantiles.ndim == 2:
-                    # Sort columns by their median value across horizon to enforce order if needed
-                    if quantiles.shape[1] < quantiles.shape[0]:
-                        # shape (horizon, num_q)
-                        order = np.argsort(np.nanmedian(quantiles, axis=0))
-                        quantiles = quantiles[:, order]
-                    else:
-                        # shape (num_q, horizon)
-                        order = np.argsort(np.nanmedian(quantiles, axis=1))
-                        quantiles = quantiles[order, :]
-            except Exception as e:
-                logger.warning(f"Could not sort quantiles by magnitude: {e}")
-
-            try:
+                quantiles = np.array(results['quantile_forecast'])
                 quantile_shape = list(quantiles.shape)
                 logger.info(f"Quantile forecast shape received for viz: {quantile_shape}")
-            except Exception:
-                pass
-            # Robust mapping across shapes
-            if quantiles.ndim == 2:
-                # Determine which axis indexes quantile levels
-                # Prefer shape (horizon, num_q); if (num_q, horizon) transpose
-                if quantiles.shape[1] < quantiles.shape[0]:
-                    q_mat = quantiles
-                else:
-                    q_mat = quantiles.T  # Make shape (horizon, num_q)
-
-                num_q = q_mat.shape[1]
                 
-                # Map quantile index to display percent label e.g., 1->Q10, 9->Q90 assuming 0..9
-                def idx_to_percent(idx: int) -> int:
-                    if num_q == 10:
-                        return idx * 10
-                    return int(round(100 * (idx / (num_q - 1))))
-
-                # Create multiple quantile bands based on user selection
-                if isinstance(selected_indices, list) and len(selected_indices) >= 2:
-                    selected_sorted = sorted([i for i in selected_indices if 0 <= i < num_q])
-                    if len(selected_sorted) >= 2:
-                        # Create bands for each pair of consecutive selected quantiles
-                        for i in range(len(selected_sorted) - 1):
-                            lower_idx = selected_sorted[i]
-                            upper_idx = selected_sorted[i + 1]
-                            band_name = f'quantile_band_{i}'
-                            intervals[f'{band_name}_lower'] = q_mat[:, lower_idx].tolist()
-                            intervals[f'{band_name}_upper'] = q_mat[:, upper_idx].tolist()
-                            intervals[f'{band_name}_label'] = f"Q{idx_to_percent(lower_idx)}–Q{idx_to_percent(upper_idx)}"
-                        used_quantile_intervals = True
-                        logger.info(f"Created {len(selected_sorted)-1} quantile bands from user selection: {selected_sorted}")
+                # Use centralized quantile processing
+                intervals = process_quantile_bands(
+                    quantile_forecast=quantiles,
+                    selected_indices=selected_indices if selected_indices else None
+                )
                 
-                # Fallback to default bands if no user selection or invalid selection
-                if not used_quantile_intervals:
-                    default_pairs = []
-                    if num_q >= 10:
-                        default_pairs = [(1,9),(2,8),(3,7),(4,6)]
-                    elif num_q >= 5:
-                        default_pairs = [(0,num_q-1)]
-                        if num_q >= 3:
-                            mid = num_q // 2
-                            default_pairs += [(0,mid),(mid,num_q-1)]
-                    for i,(li,ui) in enumerate(default_pairs):
-                        intervals[f'quantile_band_{i}_lower'] = q_mat[:, li].tolist()
-                        intervals[f'quantile_band_{i}_upper'] = q_mat[:, ui].tolist()
-                        intervals[f'quantile_band_{i}_label'] = f"Q{idx_to_percent(li)}–Q{idx_to_percent(ui)}"
-                    used_quantile_intervals = len(default_pairs) > 0
-                    logger.info(f"Created default quantile bands for {num_q} quantiles: {default_pairs}")
-
-            elif quantiles.ndim == 1:
-                # Single series; treat as median-only info
-                intervals = {'median_forecast': quantiles.tolist()}
+                used_quantile_intervals = len(intervals) > 0
+                logger.info(f"✅ Processed quantile bands using centralized function. Bands: {len(intervals)//3}")
+                
+            except Exception as e:
+                logger.warning(f"Quantile band processing failed: {e}")
+                intervals = {}
                 used_quantile_intervals = False
+        else:
+            logger.warning("No quantile_forecast found in results - quantile intervals will not be displayed")
         
         # Generate plot
-        fig = current_visualizer.plot_forecast_with_intervals(
-            historical_data=historical_data,
-            forecast=forecast,
-            intervals=intervals if intervals else None,
-            dates_historical=dates_historical,
-            dates_future=dates_future,
-            title=title,
-            target_name=target_name
-        )
+        try:
+            logger.info(f"Generating plot with forecast length: {len(forecast)}")
+            logger.info(f"Historical data type: {type(historical_data)}, length: {len(historical_data) if hasattr(historical_data, '__len__') else 'N/A'}")
+            logger.info(f"Forecast type: {type(forecast)}, length: {len(forecast) if hasattr(forecast, '__len__') else 'N/A'}")
+            logger.info(f"Intervals keys: {list(intervals.keys()) if intervals else 'None'}")
+            logger.info(f"Dates historical length: {len(dates_historical)}")
+            logger.info(f"Dates future length: {len(dates_future)}")
+            
+            fig = current_visualizer.plot_forecast_with_intervals(
+                historical_data=historical_data,
+                forecast=forecast,
+                intervals=intervals if intervals else None,
+                dates_historical=dates_historical,
+                dates_future=dates_future,
+                title=title,
+                target_name=target_name
+            )
+            logger.info("Plot generated successfully")
+        except Exception as plot_error:
+            logger.error(f"Plot generation failed: {str(plot_error)}")
+            import traceback
+            traceback.print_exc()
+            raise plot_error
         
         # Convert to base64
         img_buffer = io.BytesIO()
         fig.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', facecolor='white')
         img_buffer.seek(0)
-        img_base64 = base64.b64encode(img_buffer.read()).decode('utf-8')
+        img_data = img_buffer.read()
+        img_base64 = base64.b64encode(img_data).decode('utf-8')
         plt.close(fig)
+        
+        logger.info(f"Image generated - buffer size: {len(img_data)} bytes, base64 length: {len(img_base64)}")
         
         return jsonify({
             'success': True,
@@ -530,7 +608,7 @@ if __name__ == '__main__':
     # Initialize default model for local development
     if debug:
         logger.info("Development mode - initializing default model")
-        init_model(backend='cpu', context_len=100, horizon_len=24, 
+        init_model(backend='cpu', context_len=64, horizon_len=24, 
                   checkpoint="google/timesfm-2.0-500m-pytorch")
     
     # Run the app

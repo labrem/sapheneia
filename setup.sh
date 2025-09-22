@@ -206,7 +206,7 @@ try:
         per_core_batch_size=1,
         horizon_len=4,
         num_layers=50,
-        context_len=100
+        context_len=64
     )
     print('✅ TimesFM hyperparameters created')
 except Exception as e:

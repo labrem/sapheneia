@@ -52,7 +52,7 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Context Length</label>
-                            <input type="number" class="form-control" id="contextLen" value="100" min="10" max="2048">
+                            <input type="number" class="form-control" id="contextLen" value="64" min="10" max="2048">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Horizon Length</label>
@@ -73,11 +73,11 @@
                             <label class="form-label">HuggingFace Checkpoint</label>
                             <select class="form-select" id="checkpoint">
                                 <option value="google/timesfm-2.0-500m-pytorch" selected>google/timesfm-2.0-500m-pytorch</option>
-                                <option value="google/timesfm-2.0-500m-jax">google/timesfm-2.0-500m-jax</option>
                             </select>
-                            <div class="form-text">Select the appropriate backend for your system</div>
+                            <div class="form-text">PyTorch model for CPU/GPU inference</div>
                         </div>
                     </div>
+                    
                     <!-- Local Model Path Row -->
                     <div class="row mt-3" id="localPathRow" style="display: none;">
                         <div class="col-md-12">
@@ -114,7 +114,8 @@
                         <div class="mb-3">
                             <input type="file" class="form-control" id="dataFile" accept=".csv">
                             <div class="form-text">
-                                CSV file with 'date' column required. Max size: 16MB.
+                                CSV file with 'date' column required. Max size: 16MB.<br>
+                                <strong>Recommended:</strong> Navigate to the <code>/local</code> directory in your project workspace.
                             </div>
                         </div>
                         <button type="button" class="btn btn-success" id="uploadBtn">
@@ -246,47 +247,43 @@
                                 <label class="form-label">Select quantiles to shade (choose lower and upper)</label>
                                 <div class="d-flex flex-wrap gap-2" id="quantileCheckboxes">
                                     <div class="form-check form-check-inline">
-                                        <input class="form-check-input quantile-tick" type="checkbox" value="0" id="q0">
-                                        <label class="form-check-label" for="q0">0</label>
-                                    </div>
-                                    <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="1" id="q1" checked>
-                                        <label class="form-check-label" for="q1">1</label>
+                                        <label class="form-check-label" for="q1">Q10</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="2" id="q2">
-                                        <label class="form-check-label" for="q2">2</label>
+                                        <label class="form-check-label" for="q2">Q20</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="3" id="q3">
-                                        <label class="form-check-label" for="q3">3</label>
+                                        <label class="form-check-label" for="q3">Q30</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="4" id="q4">
-                                        <label class="form-check-label" for="q4">4</label>
+                                        <label class="form-check-label" for="q4">Q40</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="5" id="q5">
-                                        <label class="form-check-label" for="q5">5</label>
+                                        <label class="form-check-label" for="q5">Q50</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="6" id="q6">
-                                        <label class="form-check-label" for="q6">6</label>
+                                        <label class="form-check-label" for="q6">Q60</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="7" id="q7">
-                                        <label class="form-check-label" for="q7">7</label>
+                                        <label class="form-check-label" for="q7">Q70</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="8" id="q8">
-                                        <label class="form-check-label" for="q8">8</label>
+                                        <label class="form-check-label" for="q8">Q80</label>
                                     </div>
                                     <div class="form-check form-check-inline">
                                         <input class="form-check-input quantile-tick" type="checkbox" value="9" id="q9" checked>
-                                        <label class="form-check-label" for="q9">9</label>
+                                        <label class="form-check-label" for="q9">Q90</label>
                                     </div>
                                 </div>
-                                <div class="form-text">Defaults approximate 10% and 90% bands when 10 quantiles are returned.</div>
+                                <div class="form-text">Defaults to Q10-Q90 bands. Index 0 (legacy mean) is automatically skipped.</div>
                             </div>
                         </div>
                     </div>

@@ -12,7 +12,7 @@ Key Features:
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import numpy as np
 import timesfm
 
@@ -293,3 +293,64 @@ class TimesFMModel:
         
         if self.model:
             logger.warning("Model needs to be reloaded for context change to take effect")
+
+
+def initialize_timesfm_model(
+    backend: str = "cpu",
+    context_len: int = 100,
+    horizon_len: int = 24,
+    checkpoint: Optional[str] = None,
+    local_model_path: Optional[str] = None
+) -> Tuple[TimesFMModel, 'Forecaster', 'Visualizer']:
+    """
+    Centralized function to initialize TimesFM model with all required components.
+    
+    This function encapsulates the complete model loading and initialization process,
+    including the creation of TimesFMModel, Forecaster, and Visualizer objects.
+    
+    Args:
+        backend: Computing backend ("cpu", "gpu", "tpu")
+        context_len: Maximum context length for input time series
+        horizon_len: Forecast horizon length
+        checkpoint: HuggingFace checkpoint repo ID
+        local_model_path: Path to local model checkpoint
+        
+    Returns:
+        Tuple of (model_wrapper, forecaster, visualizer)
+        
+    Raises:
+        Exception: If model initialization fails
+    """
+    logger.info("🚀 Initializing TimesFM model with centralized function...")
+    
+    try:
+        # Import here to avoid circular imports
+        from forecast import Forecaster
+        from visualization import Visualizer
+        
+        # Create model wrapper
+        model_wrapper = TimesFMModel(
+            backend=backend,
+            context_len=context_len,
+            horizon_len=horizon_len,
+            checkpoint=checkpoint,
+            local_model_path=local_model_path
+        )
+        
+        # Load the actual TimesFM model
+        timesfm_model = model_wrapper.load_model()
+        
+        # Create forecaster and visualizer
+        forecaster = Forecaster(timesfm_model)
+        visualizer = Visualizer(style="professional")
+        
+        logger.info("✅ TimesFM model initialization completed successfully!")
+        logger.info(f"   Model: {model_wrapper.checkpoint or model_wrapper.local_model_path}")
+        logger.info(f"   Backend: {backend}")
+        logger.info(f"   Context: {context_len}, Horizon: {horizon_len}")
+        
+        return model_wrapper, forecaster, visualizer
+        
+    except Exception as e:
+        logger.error(f"❌ TimesFM model initialization failed: {str(e)}")
+        raise

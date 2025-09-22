@@ -1,4 +1,3 @@
-
 # Sapheneia TimesFM Project Documentation
 
 This document provides a comprehensive overview of the Sapheneia TimesFM project, including the TimesFM model, the project's codebase, and opportunities for code optimization.
@@ -44,13 +43,26 @@ The TimesFM model produces the following outputs:
 | `point_forecast` | The point forecast for the specified horizon. | numpy.ndarray |
 | `quantile_forecast` | The quantile forecasts for the specified horizon. | numpy.ndarray |
 
+### 1.4. Output Quantiles
+
+Index 0: A Mean Forecast (seems to be a legacy output)
+Index 1: The 10th Quantile (0.1)
+Index 2: The 20th Quantile (0.2)
+Index 3: The 30th Quantile (0.3)
+Index 4: The 40th Quantile (0.4)
+Index 5: The 50th Quantile (0.5)
+Index 6: The 60th Quantile (0.6)
+Index 7: The 70th Quantile (0.7)
+Index 8: The 80th Quantile (0.8)
+Index 9: The 90th Quantile (0.9)
+
 ## 2. Codebase Overview
 
 The Sapheneia TimesFM project is structured into three main components:
 
-*   **`/src`**: A Python library containing the core logic for data processing, forecasting, model handling, and visualization.
-*   **`/webapp`**: A Flask-based web application that provides a user interface for the forecasting tools.
-*   **`/notebooks`**: Jupyter notebooks for research, demos, and experimentation.
+*   `/src`: A Python library containing the core logic for data processing, forecasting, model handling, and visualization.
+*   `/webapp`: A Flask-based web application that provides a user interface for the forecasting tools.
+*   `/notebooks`: Jupyter notebooks for research, demos, and experimentation.
 
 This modular structure separates the core functionality from the user interface, which is a good practice for code maintainability and reusability.
 
@@ -71,3 +83,67 @@ The following is a list of opportunities for code consolidation:
 *   **Quantile Processing:** The logic for processing quantiles and creating quantile bands is a prime candidate for consolidation. This logic is currently duplicated in both the web app and the notebook. A new function in `src/forecast.py` or `src/visualization.py` could be created to handle this task.
 
 By consolidating this redundant code, the project will be easier to maintain, debug, and extend in the future.
+
+## 4. Code Optimization Implementation Plan
+
+This section outlines a step-by-step plan to implement the code optimizations identified in Section 3. The goal is to centralize redundant logic from `webapp/app.py` and `notebooks/sapheneia_webapp_mirror.ipynb` into the `src/` library.
+
+### Step 1: Centralize Model Initialization
+
+1.  **Modify `src/model.py`:**
+    *   Create a new function `initialize_timesfm_model` that accepts `backend`, `context_len`, `horizon_len`, `checkpoint`, and `local_model_path`.
+    *   This function will encapsulate the complete model loading and initialization process, including the creation of `TimesFMModel`, `Forecaster`, and `Visualizer` objects.
+    *   It will return a tuple: `(model_wrapper, forecaster, visualizer)`.
+
+2.  **Refactor `webapp/app.py`:**
+    *   In `api_init_model`, replace the current initialization logic with a call to `initialize_timesfm_model` from `src/model.py`.
+    *   Store the returned objects in the global `current_model`, `current_forecaster`, and `current_visualizer` variables.
+
+3.  **Refactor `notebooks/sapheneia_webapp_mirror.ipynb`:**
+    *   In the "Model Initialization" section, remove the duplicated code and call the new `initialize_timesfm_model` function.
+
+### Step 2: Consolidate Data Processing
+
+1.  **Enhance `src/data.py`:**
+    *   The existing `load_csv_data` function is already a good abstraction.
+    *   The `prepare_forecast_data` function will be enhanced to be more generic if needed, but it already handles the main logic of preparing data for forecasting. No major changes are needed here for now, but we will ensure both the webapp and notebook use it consistently.
+
+2.  **Refactor `webapp/app.py` and `notebooks/sapheneia_webapp_mirror.ipynb`:**
+    *   Ensure that both files use `DataProcessor().load_csv_data(...)` and `DataProcessor().prepare_forecast_data(...)` without re-implementing any of that logic.
+
+### Step 3: Abstract Forecasting Logic
+
+1.  **Create `run_forecast` in `src/forecast.py`:**
+    *   Create a new function `run_forecast` that takes `forecaster`, `target_inputs`, `covariates`, `use_covariates`, and `freq` as arguments.
+    *   This function will implement the logic to decide whether to run `forecast_with_covariates` or the basic `forecast`, including the fallback mechanism currently present in `webapp/app.py`.
+    *   It will return a dictionary containing the forecast results (e.g., `{'enhanced_forecast': ..., 'quantile_forecast': ...}`).
+
+2.  **Refactor `webapp/app.py`:**
+    *   In the `api_forecast` endpoint, replace the forecasting logic with a call to the new `run_forecast` function.
+
+3.  **Refactor `notebooks/sapheneia_webapp_mirror.ipynb`:**
+    *   In the "Forecasting" section, replace the duplicated forecasting logic with a call to `run_forecast`.
+
+### Step 4: Centralize Quantile Processing
+
+1.  **Create `process_quantile_bands` in `src/forecast.py`:**
+    *   Create a new function `process_quantile_bands` that accepts the `quantile_forecast` array and a list of `selected_indices`.
+    *   This function will contain the logic for sorting quantiles and creating the quantile band dictionary, as seen in `webapp/app.py` and the notebook.
+    *   It will return a dictionary of quantile bands ready for visualization.
+
+2.  **Refactor `webapp/app.py`:**
+    *   In `api_visualize`, use `process_quantile_bands` to generate the `intervals` dictionary.
+
+3.  **Refactor `notebooks/sapheneia_webapp_mirror.ipynb`:**
+    *   In the "Quantile Processing" section, call `process_quantile_bands` to generate the quantile bands.
+
+### Step 5: Streamline Visualization
+
+1.  **Enhance `src/visualization.py`:**
+    *   The `plot_forecast_with_intervals` function is already well-abstracted. No changes are needed for this function itself.
+    *   We will ensure that the data preparation for this function is clean in both the webapp and notebook.
+
+2.  **Refactor `webapp/app.py` and `notebooks/sapheneia_webapp_mirror.ipynb`:**
+    *   After getting the results from `run_forecast` and `process_quantile_bands`, the calls to `plot_forecast_with_intervals` should be straightforward and clean in both files.
+
+By following these steps, we will significantly reduce code duplication, improve maintainability, and make the codebase more robust and easier to extend.

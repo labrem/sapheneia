@@ -87,7 +87,7 @@ from src.visualization import Visualizer
 # Initialize model
 model_wrapper = TimesFMModel(
     backend="cpu",
-    context_len=100,
+    context_len=64,
     horizon_len=24,
     checkpoint="google/timesfm-2.0-500m-pytorch"
 )
@@ -96,7 +96,7 @@ timesfm_model = model_wrapper.load_model()
 # Process data
 processor = DataProcessor()
 data = processor.load_csv_data("data.csv", data_definition)
-inputs, covariates = processor.prepare_forecast_data(data, 100, 24)
+inputs, covariates = processor.prepare_forecast_data(data, 64, 24)
 
 # Generate forecasts
 forecaster = Forecaster(timesfm_model)
