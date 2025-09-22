@@ -46,11 +46,9 @@
 #
 #   7. Sets Up Project Structure: It creates several directories that the application needs to run, such as data/, logs/, and webapp/uploads/. It also creates a standard .gitignore file if one doesn't already exist to prevent temporary files and data from being committed to version control.
 #
-#   8. Creates Sample Data: The script generates a sample CSV file (data/sample_financial_data.csv) with synthetic financial data and a corresponding JSON file (data/sample_data_definition.json) that describes the columns. This allows you to test the project without providing your own data first.
+#   8. Sets Up GCP Deployment (Optional): If you use the --gcp-deploy option, it creates a new script called deploy_gcp.sh that you can use to deploy the web application to Google Cloud Run.
 #
-#   9. Sets Up GCP Deployment (Optional): If you use the --gcp-deploy option, it creates a new script called deploy_gcp.sh that you can use to deploy the web application to Google Cloud Run.
-#
-#   10. Verifies Installation: Finally, it runs a quick check to ensure everything was installed correctly. It tries to import the main libraries (timesfm, pandas, flask, etc.) and runs a very basic TimesFM operation to confirm the model is functional.
+#   9. Verifies Installation: Finally, it runs a quick check to ensure everything was installed correctly. It tries to import the main libraries (timesfm, pandas, flask, etc.) and runs a very basic TimesFM operation to confirm the model is functional.
 #
 #   After all these steps, it prints a "Setup Complete!" message with instructions on what to do next, such as how to activate the virtual environment and run the Jupyter notebooks or the web app.
 #
@@ -314,73 +312,6 @@ EOF
     fi
 }
 
-# Function to create sample data
-create_sample_data() {
-    print_header "Creating Sample Data"
-    
-    python -c "
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-
-# Generate sample data
-np.random.seed(42)
-num_periods = 200
-
-start_date = datetime(2020, 1, 1)
-dates = [start_date + timedelta(weeks=i) for i in range(num_periods)]
-
-# Bitcoin price
-btc_base = 25000
-trend = np.linspace(0, 0.6, num_periods)
-volatility = np.random.normal(0, 0.08, num_periods)
-seasonal = 0.1 * np.sin(2 * np.pi * np.arange(num_periods) / 52)
-btc_price = btc_base * np.exp(trend + volatility + seasonal)
-
-# Correlated assets
-eth_price = btc_price * 0.06 * (1 + np.random.normal(0, 0.05, num_periods))
-sp500_price = 3500 * np.exp(trend * 0.3 + np.random.normal(0, 0.02, num_periods))
-vix_price = np.clip(20 - 2 * np.diff(np.log(btc_price), prepend=0) * 10 + 
-                   np.random.normal(0, 3, num_periods), 10, 80)
-
-# Categorical features
-quarters = [(pd.Timestamp(d).month - 1) // 3 + 1 for d in dates]
-
-sample_df = pd.DataFrame({
-    'date': dates,
-    'btc_price': btc_price,
-    'eth_price': eth_price,
-    'sp500_price': sp500_price,
-    'vix_index': vix_price,
-    'quarter': quarters,
-    'asset_category': 'cryptocurrency',
-    'base_volatility': 0.08
-})
-
-# Save sample data
-sample_df.to_csv('data/sample_financial_data.csv', index=False)
-print('Sample data created: data/sample_financial_data.csv')
-
-# Create sample data definition
-import json
-sample_definition = {
-    'btc_price': 'target',
-    'eth_price': 'dynamic_numerical',
-    'sp500_price': 'dynamic_numerical',
-    'vix_index': 'dynamic_numerical',
-    'quarter': 'dynamic_categorical',
-    'asset_category': 'static_categorical',
-    'base_volatility': 'static_numerical'
-}
-
-with open('data/sample_data_definition.json', 'w') as f:
-    json.dump(sample_definition, f, indent=2)
-print('Sample data definition created: data/sample_data_definition.json')
-"
-    
-    print_status "Sample data and definition created"
-}
-
 # Function to setup GCP deployment
 setup_gcp_deployment() {
     print_header "Setting up GCP Deployment Configuration"
@@ -469,8 +400,7 @@ The script will:
 2. Create Python virtual environment
 3. Install TimesFM and dependencies
 4. Setup project structure
-5. Create sample data
-6. Verify installation
+5. Verify installation
 
 For web application setup, it will additionally:
 - Install Flask and web dependencies
@@ -539,8 +469,6 @@ main() {
     # Setup project structure
     setup_project_structure
     
-    # Create sample data
-    create_sample_data
     
     # Setup GCP deployment if requested
     if [[ "$SETUP_TYPE" == "--gcp-deploy" ]] || [[ "$SETUP_TYPE" == "full" ]]; then
