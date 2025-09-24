@@ -194,7 +194,6 @@ cython_debug/
 .cursorindexingignore
 
 # Custom files
-CLAUDE.md
 GEMINI.md
 SAPHENEIA.md
 local/
