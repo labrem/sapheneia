@@ -197,3 +197,5 @@ cython_debug/
 GEMINI.md
 SAPHENEIA.md
 local/
+.DS_Store
+webapp/uploads/
