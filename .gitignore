@@ -197,6 +197,7 @@ cython_debug/
 GEMINI.md
 SAPHENEIA.md
 local/
+uploads/
 webapp/uploads/
 
 # macOS
