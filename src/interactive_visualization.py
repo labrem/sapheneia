@@ -173,7 +173,6 @@ class InteractiveVisualizer:
         show_figure: bool = True,
         context_len: Optional[int] = None,
         horizon_len: Optional[int] = None,
-        show_full_history: bool = True,
         y_axis_padding: float = 0.1
     ) -> go.Figure:
         """
@@ -192,7 +191,6 @@ class InteractiveVisualizer:
             show_figure: Whether to display the figure
             context_len: Length of context window for default view focus
             horizon_len: Length of horizon for default view focus
-            show_full_history: Whether to show full historical data (True) or just context (False)
             y_axis_padding: Padding factor for focused y-axis range (0.1 = 10% padding)
             
         Returns:
@@ -201,8 +199,6 @@ class InteractiveVisualizer:
         logger.info(f"Creating interactive forecast visualization: {title}")
         
         # Convert to numpy arrays
-        historical_data = np.array(historical_data)
-        forecast = np.array(forecast)
         if actual_future is not None:
             actual_future = np.array(actual_future)
         
@@ -216,21 +212,7 @@ class InteractiveVisualizer:
             future_x = np.arange(len(historical_data), len(historical_data) + len(forecast))
         else:
             future_x = pd.to_datetime(dates_future)
-        
-        # Determine what data to show based on show_full_history parameter
-        if show_full_history:
-            # Show all historical data
-            display_historical_data = historical_data
-            display_historical_x = historical_x
-        else:
-            # Show only context window if specified
-            if context_len is not None and context_len < len(historical_data):
-                display_historical_data = historical_data[-context_len:]
-                display_historical_x = historical_x[-context_len:] if dates_historical is not None else np.arange(len(historical_data) - context_len, len(historical_data))
-            else:
-                display_historical_data = historical_data
-                display_historical_x = historical_x
-        
+                
         # Calculate default view range (context + horizon)
         if context_len is not None and horizon_len is not None:
             # Focus on context + horizon period
@@ -250,22 +232,22 @@ class InteractiveVisualizer:
             else:
                 # If not showing full history, the entire plot is the focused view
                 if dates_historical is not None:
-                    start_date = display_historical_x[0]
-                    end_date = future_x[min(horizon_len - 1, len(future_x) - 1)] if len(future_x) > 0 else display_historical_x[-1]
+                    start_date = historical_x[0]
+                    end_date = future_x[min(horizon_len - 1, len(future_x) - 1)] if len(future_x) > 0 else historical_x[-1]
                     default_x_range = [start_date, end_date]
                 else:
                     start_idx = 0
-                    end_idx = len(display_historical_data) + len(forecast)
+                    end_idx = len(historical_x) + len(forecast)
                     default_x_range = [start_idx, end_idx]
         else:
             # No specific focus, show all data
             if dates_historical is not None:
-                start_date = display_historical_x[0]
-                end_date = future_x[-1] if len(future_x) > 0 else display_historical_x[-1]
+                start_date = historical_x[0]
+                end_date = future_x[-1] if len(future_x) > 0 else historical_x[-1]
                 default_x_range = [start_date, end_date]
             else:
                 start_idx = 0
-                end_idx = len(display_historical_data) + len(forecast)
+                end_idx = len(historical_x) + len(forecast)
                 default_x_range = [start_idx, end_idx]
         
         # Calculate focused y-axis range for better visibility
@@ -323,7 +305,7 @@ class InteractiveVisualizer:
                 default_y_range = [data_min - padding, data_max + padding]
             else:
                 # If context_len >= historical_data length, use all data
-                all_data = np.concatenate([display_historical_data, forecast])
+                all_data = np.concatenate([historical_x, forecast])
                 
                 # Include prediction intervals in y-axis calculation
                 if intervals:
@@ -373,8 +355,8 @@ class InteractiveVisualizer:
         
         # Plot historical data
         fig.add_trace(go.Scatter(
-            x=display_historical_x,
-            y=display_historical_data,
+            x=historical_x,
+            y=historical_data,
             mode='lines',
             name='Historical Data',
             line=dict(color=self.colors['historical'], width=3),
@@ -383,11 +365,11 @@ class InteractiveVisualizer:
         
         # Create seamless connection for forecast
         if dates_historical is None:
-            connection_x = [len(display_historical_data) - 1] + list(future_x)
+            connection_x = [len(historical_x) - 1] + list(future_x)
         else:
-            connection_x = [display_historical_x[-1]] + list(future_x)
+            connection_x = [historical_x[-1]] + list(future_x)
         
-        connection_forecast = [display_historical_data[-1]] + list(forecast)
+        connection_forecast = [historical_x[-1]] + list(forecast)
         
         # Plot quantile intervals if available
         if intervals:
@@ -544,7 +526,7 @@ class InteractiveVisualizer:
         
         # Plot actual future data if available
         if actual_future is not None:
-            actual_connection = [display_historical_data[-1]] + list(actual_future)
+            actual_connection = [historical_x[-1]] + list(actual_future)
             fig.add_trace(go.Scatter(
                 x=connection_x,
                 y=actual_connection,
