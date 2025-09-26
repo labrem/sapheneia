@@ -17,7 +17,7 @@ import numpy as np
 import json
 import logging
 from typing import Dict, List, Union, Optional, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -187,9 +187,11 @@ class DataProcessor:
         if len(data) < total_required:
             raise ValueError(f"Insufficient data: need {total_required} points, have {len(data)}")
         
-        # Prepare target inputs (context only)
+        # Prepare target inputs using the most recent context window before the forecast horizon
         target_series = data[target_column].values
-        target_inputs = target_series[:context_len].tolist()
+        context_start = max(0, len(data) - total_required)
+        context_end = context_start + context_len
+        target_inputs = target_series[context_start:context_end].tolist()
         
         # Prepare covariates
         covariates = self._prepare_covariates(data, context_len, horizon_len)
@@ -226,7 +228,9 @@ class DataProcessor:
         }
         
         total_len = context_len + horizon_len
-        
+        start_idx = max(0, len(data) - total_len)
+        end_idx = start_idx + total_len
+
         for column, data_type in self.data_definition.items():
             if column == 'date' or data_type == 'target':
                 continue
@@ -237,7 +241,7 @@ class DataProcessor:
                     logger.warning(f"Insufficient data for dynamic covariate '{column}': need {total_len}, have {len(data)}")
                     continue
                 
-                values = data[column].values[:total_len].tolist()
+                values = data[column].iloc[start_idx:end_idx].tolist()
                 covariates['dynamic_numerical_covariates'][column] = [values]
                 logger.info(f"Added dynamic numerical covariate '{column}': {len(values)} values")
                 
@@ -247,7 +251,7 @@ class DataProcessor:
                     logger.warning(f"Insufficient data for dynamic covariate '{column}': need {total_len}, have {len(data)}")
                     continue
                 
-                values = data[column].values[:total_len].tolist()
+                values = data[column].astype(str).iloc[start_idx:end_idx].tolist()
                 covariates['dynamic_categorical_covariates'][column] = [values]
                 logger.info(f"Added dynamic categorical covariate '{column}': {len(values)} values")
                 
@@ -398,7 +402,7 @@ class DataProcessor:
 
 def prepare_visualization_data(
     processed_data: pd.DataFrame,
-    target_inputs: List[List[float]],
+    target_inputs: Union[List[float], List[List[float]]],
     target_column: str,
     context_len: int,
     horizon_len: int
@@ -411,42 +415,87 @@ def prepare_visualization_data(
     
     Args:
         processed_data: Processed DataFrame with date column
-        target_inputs: Target input data for forecasting
+        target_inputs: Target input data used for forecasting (flattenable to a single series)
         target_column: Name of the target column
         context_len: Context length used for forecasting
         horizon_len: Horizon length for forecasting
         
     Returns:
         Dictionary containing visualization data with keys:
-        - 'historical_data': Target input data
-        - 'dates_historical': Historical dates
-        - 'dates_future': Future dates for forecast
+        - 'historical_data': Context window used for forecasting (chronologically ordered)
+        - 'dates_historical': Corresponding historical dates
+        - 'dates_future': Future dates aligned with the forecast horizon
         - 'target_name': Name of the target column
+        - 'actual_future': Optional actual values for the forecast horizon (if available)
     """
-    from datetime import timedelta
-    
-    # Prepare historical data
-    historical_data = target_inputs
-    
-    # Get historical dates
-    dates_historical = processed_data['date'].iloc[:context_len].tolist()
-    
-    # Generate future dates
-    if len(processed_data) > context_len + horizon_len:
-        dates_future = processed_data['date'].iloc[context_len:context_len + horizon_len].tolist()
+
+    if processed_data.empty:
+        return {
+            'historical_data': [],
+            'dates_historical': [],
+            'dates_future': [],
+            'target_name': target_column,
+            'actual_future': []
+        }
+
+    # Work on a chronologically sorted copy to ensure alignment
+    df = processed_data.sort_values('date').reset_index(drop=True)
+
+    # Flatten target inputs (they may arrive as List[List[float]] or List[float])
+    if isinstance(target_inputs, (list, tuple)) and target_inputs:
+        if isinstance(target_inputs[0], (list, tuple, np.ndarray)):
+            target_inputs_flat = list(target_inputs[0])
+        else:
+            target_inputs_flat = list(target_inputs)
     else:
-        # Fallback: generate future dates
+        target_inputs_flat = []
+
+    # Respect the actual context length used
+    context_len_effective = len(target_inputs_flat) or context_len
+
+    total_required = context_len_effective + horizon_len
+    available_len = len(df)
+
+    # Determine the slice that corresponds to the model context
+    if available_len >= total_required:
+        context_end = available_len - horizon_len
+        context_start = max(0, context_end - context_len_effective)
+    else:
+        context_end = available_len
+        context_start = max(0, context_end - context_len_effective)
+
+    historical_slice = df[target_column].iloc[context_start:context_end].astype(float).tolist()
+    if not historical_slice and target_inputs_flat:
+        historical_slice = list(map(float, target_inputs_flat))
+
+    dates_historical = df['date'].iloc[context_start:context_end].tolist()
+
+    # Extract actual future values when present (useful for overlaying actuals)
+    future_slice = df[target_column].iloc[context_end:context_end + horizon_len].astype(float).tolist()
+    dates_future = df['date'].iloc[context_end:context_end + horizon_len].tolist()
+
+    if len(dates_future) < horizon_len:
+        # Generate future dates if the dataset stops at the forecast boundary
+        inferred_delta: Optional[pd.Timedelta] = None
+        if len(dates_historical) >= 2:
+            inferred_delta = dates_historical[-1] - dates_historical[-2]
         last_date = dates_historical[-1]
         if hasattr(last_date, 'to_pydatetime'):
             last_date = last_date.to_pydatetime()
-        dates_future = [last_date + timedelta(weeks=i+1) for i in range(horizon_len)]
-    
-    # Convert dates to strings for JSON serialization
+        elif isinstance(last_date, np.datetime64):
+            last_date = pd.to_datetime(last_date).to_pydatetime()
+
+        step = inferred_delta if isinstance(inferred_delta, pd.Timedelta) and inferred_delta != pd.Timedelta(0) else timedelta(days=1)
+        dates_future = [last_date + step * (i + 1) for i in range(horizon_len)]
+        future_slice = []  # No actual future data in this case
+
     visualization_data = {
-        'historical_data': historical_data,
+        'historical_data': historical_slice,
         'dates_historical': [d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in dates_historical],
         'dates_future': [d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in dates_future],
-        'target_name': target_column
+        'target_name': target_column,
+        'actual_future': future_slice
     }
     
     return visualization_data
+    
