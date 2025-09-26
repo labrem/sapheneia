@@ -17,7 +17,7 @@ import numpy as np
 import json
 import logging
 from typing import Dict, List, Union, Optional, Tuple, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +423,7 @@ def prepare_visualization_data(
         - 'dates_future': Future dates for forecast
         - 'target_name': Name of the target column
     """
+    from datetime import timedelta
     
     # Prepare historical data
     historical_data = target_inputs

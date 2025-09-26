@@ -198,108 +198,140 @@ class InteractiveVisualizer:
         """
         logger.info(f"Creating interactive forecast visualization: {title}")
         
-        historical_x = pd.to_datetime(dates_historical)
-        future_x = pd.to_datetime(dates_future)
-            
-        # Calculate default view range (context + horizon)
-        start_date = historical_x[0]
-        end_date = future_x[-1] if len(future_x) > 0 else historical_x[-1]
-        default_x_range = [start_date, end_date]
+        # Convert to numpy arrays
+        if actual_future is not None:
+            actual_future = np.array(actual_future)
         
-        # Focus y-axis on the context + horizon period data
-        if context_len < len(historical_data):
-            # Get the data range for context + horizon
-            context_data = historical_data[-context_len:]
-            focused_data = np.concatenate([context_data, forecast])
-            
-            # Include prediction intervals in y-axis calculation
-            if intervals:
-                # Collect all interval data for y-axis range calculation
-                interval_data = []
+        # Setup time axis
+        if dates_historical is None:
+            historical_x = np.arange(len(historical_data))
+        else:
+            historical_x = pd.to_datetime(dates_historical)
+        
+        future_x = np.arange(
+            len(historical_data), len(historical_data) + len(forecast)
+            ) if dates_future is None else pd.to_datetime(dates_future)
                 
-                # Add 50th percentile if available
-                if 'lower_50' in intervals and 'upper_50' in intervals:
-                    interval_data.extend(intervals['lower_50'])
-                    interval_data.extend(intervals['upper_50'])
+        # Calculate default view range (context + horizon)
+        if context_len is not None and horizon_len is not None:
+            if dates_historical is not None:
+                start_date = historical_x[0]
+                end_date = future_x[min(horizon_len - 1, len(future_x) - 1)] if len(future_x) > 0 else historical_x[-1]
+                default_x_range = [start_date, end_date]
+            else:
+                start_idx = 0
+                end_idx = len(historical_x) + len(forecast)
+                default_x_range = [start_idx, end_idx]
+        else:
+            # No specific focus, show all data
+            if dates_historical is not None:
+                start_date = historical_x[0]
+                end_date = future_x[-1] if len(future_x) > 0 else historical_x[-1]
+                default_x_range = [start_date, end_date]
+            else:
+                start_idx = 0
+                end_idx = len(historical_x) + len(forecast)
+                default_x_range = [start_idx, end_idx]
+        
+        # Calculate focused y-axis range for better visibility
+        if context_len is not None and horizon_len is not None:
+            # Focus y-axis on the context + horizon period data
+            if context_len < len(historical_data):
+                # Get the data range for context + horizon
+                context_data = historical_data[-context_len:]
+                focused_data = np.concatenate([context_data, forecast])
                 
-                # Add 80th percentile if available
-                if 'lower_80' in intervals and 'upper_80' in intervals:
-                    interval_data.extend(intervals['lower_80'])
-                    interval_data.extend(intervals['upper_80'])
-                
-                # Add other confidence levels
-                for key in intervals.keys():
-                    if key.startswith('lower_') and key not in ['lower_50', 'lower_80']:
-                        interval_data.extend(intervals[key])
-                    elif key.startswith('upper_') and key not in ['upper_50', 'upper_80']:
-                        interval_data.extend(intervals[key])
-                
-                # Add quantile bands
-                for key in intervals.keys():
-                    if key.startswith('quantile_band_') and key.endswith('_lower'):
-                        interval_data.extend(intervals[key])
-                    elif key.startswith('quantile_band_') and key.endswith('_upper'):
-                        interval_data.extend(intervals[key])
-                
-                # Include interval data in range calculation
-                if interval_data:
-                    interval_data = np.array(interval_data)
-                    all_focused_data = np.concatenate([focused_data, interval_data])
+                # Include prediction intervals in y-axis calculation
+                if intervals:
+                    # Collect all interval data for y-axis range calculation
+                    interval_data = []
+                    
+                    # Add 50th percentile if available
+                    if 'lower_50' in intervals and 'upper_50' in intervals:
+                        interval_data.extend(intervals['lower_50'])
+                        interval_data.extend(intervals['upper_50'])
+                    
+                    # Add 80th percentile if available
+                    if 'lower_80' in intervals and 'upper_80' in intervals:
+                        interval_data.extend(intervals['lower_80'])
+                        interval_data.extend(intervals['upper_80'])
+                    
+                    # Add other confidence levels
+                    for key in intervals.keys():
+                        if key.startswith('lower_') and key not in ['lower_50', 'lower_80']:
+                            interval_data.extend(intervals[key])
+                        elif key.startswith('upper_') and key not in ['upper_50', 'upper_80']:
+                            interval_data.extend(intervals[key])
+                    
+                    # Add quantile bands
+                    for key in intervals.keys():
+                        if key.startswith('quantile_band_') and key.endswith('_lower'):
+                            interval_data.extend(intervals[key])
+                        elif key.startswith('quantile_band_') and key.endswith('_upper'):
+                            interval_data.extend(intervals[key])
+                    
+                    # Include interval data in range calculation
+                    if interval_data:
+                        interval_data = np.array(interval_data)
+                        all_focused_data = np.concatenate([focused_data, interval_data])
+                    else:
+                        all_focused_data = focused_data
                 else:
                     all_focused_data = focused_data
+                
+                # Calculate y-axis range including intervals
+                data_min = np.min(all_focused_data)
+                data_max = np.max(all_focused_data)
+                data_range = data_max - data_min
+                padding = data_range * y_axis_padding
+                
+                default_y_range = [data_min - padding, data_max + padding]
             else:
-                all_focused_data = focused_data
-            
-            # Calculate y-axis range including intervals
-            data_min = np.min(all_focused_data)
-            data_max = np.max(all_focused_data)
-            data_range = data_max - data_min
-            padding = data_range * y_axis_padding
-            
-            default_y_range = [data_min - padding, data_max + padding]
+                # If context_len >= historical_data length, use all data
+                all_data = np.concatenate([historical_x, forecast])
+                
+                # Include prediction intervals in y-axis calculation
+                if intervals:
+                    interval_data = []
+                    
+                    # Add 50th percentile if available
+                    if 'lower_50' in intervals and 'upper_50' in intervals:
+                        interval_data.extend(intervals['lower_50'])
+                        interval_data.extend(intervals['upper_50'])
+                    
+                    # Add 80th percentile if available
+                    if 'lower_80' in intervals and 'upper_80' in intervals:
+                        interval_data.extend(intervals['lower_80'])
+                        interval_data.extend(intervals['upper_80'])
+                    
+                    # Add other confidence levels
+                    for key in intervals.keys():
+                        if key.startswith('lower_') and key not in ['lower_50', 'lower_80']:
+                            interval_data.extend(intervals[key])
+                        elif key.startswith('upper_') and key not in ['upper_50', 'upper_80']:
+                            interval_data.extend(intervals[key])
+                    
+                    # Add quantile bands
+                    for key in intervals.keys():
+                        if key.startswith('quantile_band_') and key.endswith('_lower'):
+                            interval_data.extend(intervals[key])
+                        elif key.startswith('quantile_band_') and key.endswith('_upper'):
+                            interval_data.extend(intervals[key])
+                    
+                    # Include interval data in range calculation
+                    if interval_data:
+                        interval_data = np.array(interval_data)
+                        all_data = np.concatenate([all_data, interval_data])
+                
+                data_min = np.min(all_data)
+                data_max = np.max(all_data)
+                data_range = data_max - data_min
+                padding = data_range * y_axis_padding
+                
+                default_y_range = [data_min - padding, data_max + padding]
         else:
-            # If context_len >= historical_data length, use all data
-            all_data = np.concatenate([historical_x, forecast])
-            
-            # Include prediction intervals in y-axis calculation
-            if intervals:
-                interval_data = []
-                
-                # Add 50th percentile if available
-                if 'lower_50' in intervals and 'upper_50' in intervals:
-                    interval_data.extend(intervals['lower_50'])
-                    interval_data.extend(intervals['upper_50'])
-                
-                # Add 80th percentile if available
-                if 'lower_80' in intervals and 'upper_80' in intervals:
-                    interval_data.extend(intervals['lower_80'])
-                    interval_data.extend(intervals['upper_80'])
-                
-                # Add other confidence levels
-                for key in intervals.keys():
-                    if key.startswith('lower_') and key not in ['lower_50', 'lower_80']:
-                        interval_data.extend(intervals[key])
-                    elif key.startswith('upper_') and key not in ['upper_50', 'upper_80']:
-                        interval_data.extend(intervals[key])
-                
-                # Add quantile bands
-                for key in intervals.keys():
-                    if key.startswith('quantile_band_') and key.endswith('_lower'):
-                        interval_data.extend(intervals[key])
-                    elif key.startswith('quantile_band_') and key.endswith('_upper'):
-                        interval_data.extend(intervals[key])
-                
-                # Include interval data in range calculation
-                if interval_data:
-                    interval_data = np.array(interval_data)
-                    all_data = np.concatenate([all_data, interval_data])
-            
-            data_min = np.min(all_data)
-            data_max = np.max(all_data)
-            data_range = data_max - data_min
-            padding = data_range * y_axis_padding
-            
-            default_y_range = [data_min - padding, data_max + padding]
+            # No focused y-axis, let Plotly auto-scale
+            default_y_range = None
         
         # Create figure
         fig = go.Figure()
@@ -313,14 +345,7 @@ class InteractiveVisualizer:
             line=dict(color=self.colors['historical'], width=3),
             hovertemplate='<b>Historical</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>'
         ))
-        
-        # Create seamless connection for forecast
-        if dates_historical is None:
-            connection_x = [len(historical_x) - 1] + list(future_x)
-        else:
-            connection_x = [historical_x[-1]] + list(future_x)
-        
-        connection_forecast = [historical_x[-1]] + list(forecast)
+
         
         # Plot quantile intervals if available
         if intervals:
@@ -465,21 +490,33 @@ class InteractiveVisualizer:
                         hovertemplate=f'<b>{label_text}</b><br>Time: %{{x}}<br>Upper: %{{y:.2f}}<extra></extra>'
                     ))
         
-        # Plot forecast line
+
         fig.add_trace(go.Scatter(
-            x=connection_x,
-            y=connection_forecast,
+            x=future_x,
+            y=forecast,
             mode='lines',
             name='Point Forecast',
             line=dict(color=self.colors['forecast'], width=3, dash='dash'),
-            hovertemplate='<b>Forecast</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>'
+            hovertemplate='<b>Forecast</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>',
+            legendgroup='forecast'
+        ))
+
+        # 2) a 2-point seamless bridge with no hover/legend
+        fig.add_trace(go.Scatter(
+            x=[historical_x[-1], future_x[0]],
+            y=[historical_data[-1], forecast[0]],
+            mode='lines',
+            line=dict(color=self.colors['forecast'], width=3, dash='dash'),
+            hoverinfo='skip',
+            showlegend=False,
+            legendgroup='forecast'
         ))
         
         # Plot actual future data if available
         if actual_future is not None:
             actual_connection = [historical_x[-1]] + list(actual_future)
             fig.add_trace(go.Scatter(
-                x=connection_x,
+                x=future_x,
                 y=actual_connection,
                 mode='lines+markers',
                 name='Actual Future',
