@@ -346,6 +346,11 @@ class InteractiveVisualizer:
             hovertemplate='<b>Historical</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>'
         ))
 
+        # Create seamless connection for forecast
+        if dates_historical is None:
+            connection_x = [len(historical_x) - 1] + list(future_x)
+        else:
+            connection_x = [historical_x[-1]] + list(future_x)
         
         # Plot quantile intervals if available
         if intervals:
@@ -490,7 +495,6 @@ class InteractiveVisualizer:
                         hovertemplate=f'<b>{label_text}</b><br>Time: %{{x}}<br>Upper: %{{y:.2f}}<extra></extra>'
                     ))
         
-
         fig.add_trace(go.Scatter(
             x=future_x,
             y=forecast,
@@ -516,15 +520,32 @@ class InteractiveVisualizer:
         if actual_future is not None:
             actual_connection = [historical_x[-1]] + list(actual_future)
             fig.add_trace(go.Scatter(
-                x=future_x,
+                x=connection_x,
                 y=actual_connection,
                 mode='lines+markers',
                 name='Actual Future',
                 line=dict(color=self.colors['actual'], width=3),
                 marker=dict(size=8, color=self.colors['actual'], 
                            line=dict(width=2, color='white')),
-                hovertemplate='<b>Actual Future</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>'
+                hovertemplate='<b>Actual Future</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>',
+                legendgroup='actual'
             ))
+            print([historical_x[-1], connection_x[0]])
+            print([historical_data[-1], actual_connection[0]])
+
+            # 2) a 2-point seamless bridge with no hover/legend
+            fig.add_trace(go.Scatter(
+                x=[historical_x[-1], connection_x[1]],
+                y=[historical_data[-1], actual_connection[1]],
+                mode='lines',
+                line=dict(color=self.colors['actual'], width=3),
+                marker=dict(size=8, color=self.colors['actual'], 
+                           line=dict(width=2, color='white')),
+                hoverinfo='skip',
+                showlegend=False,
+                legendgroup='actual'
+            ))
+        
         
         # Add forecast start line (commented out due to datetime compatibility issues)
         # forecast_start = historical_x[-1] if dates_historical is not None else len(historical_data) - 1
