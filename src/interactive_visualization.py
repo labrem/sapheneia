@@ -463,8 +463,8 @@ class InteractiveVisualizer:
             if quantile_bands:
                 # Define colors for different bands
                 band_colors = ['rgba(255, 153, 153, 0.3)', 'rgba(153, 204, 255, 0.3)', 
-                              'rgba(153, 255, 153, 0.3)', 'rgba(255, 204, 153, 0.3)', 
-                              'rgba(204, 153, 255, 0.3)', 'rgba(255, 255, 153, 0.3)']
+                               'rgba(153, 255, 153, 0.3)', 'rgba(255, 204, 153, 0.3)', 
+                               'rgba(204, 153, 255, 0.3)', 'rgba(255, 255, 153, 0.3)']
                 
                 for i, (band_name, band_data) in enumerate(sorted(quantile_bands.items())):
                     color = band_colors[i % len(band_colors)]
@@ -492,7 +492,7 @@ class InteractiveVisualizer:
                         fill='tonexty',
                         fillcolor=color,
                         name=label_text,
-                        hovertemplate=f'<b>{label_text}</b><br>Time: %{{x}}<br>Upper: %{{y:.2f}}<extra></extra>'
+                        hovertemplate=f'<b>{label_text}</b><br>Upper: %{{y:.2f}}<extra></extra>'
                     ))
         
         fig.add_trace(go.Scatter(
@@ -546,17 +546,20 @@ class InteractiveVisualizer:
                 legendgroup='actual'
             ))
         
-        
-        # Add forecast start line (commented out due to datetime compatibility issues)
-        # forecast_start = historical_x[-1] if dates_historical is not None else len(historical_data) - 1
-        # fig.add_vline(
-        #     x=forecast_start,
-        #     line_dash="dot",
-        #     line_color="gray",
-        #     line_width=2,
-        #     annotation_text="Forecast Start",
-        #     annotation_position="top"
-        # )
+        # Add forecast start line
+        fig.add_vline(
+            x=pd.to_datetime(historical_x[-1]).to_pydatetime(),  # or .isoformat()
+            line_dash="dot", line_color="gray", line_width=1
+        )
+        fig.add_annotation(
+            x=pd.to_datetime(historical_x[-1]).to_pydatetime(),
+            y=1,                 # top of plotting area
+            xref="x",
+            yref="paper",
+            text="Forecast Start",
+            showarrow=False,
+            yanchor="bottom"
+        )
         
         # Apply layout
         layout = self._create_base_layout(title, "Time", target_name)

@@ -75,7 +75,7 @@ class DataProcessor:
         
         # Load CSV
         try:
-            self.data = pd.read_csv(csv_file_path)
+            self.data = pd.read_csv(csv_file_path).dropna(axis=0)
             logger.info(f"Loaded CSV with shape: {self.data.shape}")
             logger.info(f"Columns: {list(self.data.columns)}")
         except FileNotFoundError:
@@ -439,7 +439,7 @@ def prepare_visualization_data(
         }
 
     # Work on a chronologically sorted copy to ensure alignment
-    df = processed_data.sort_values('date').reset_index(drop=True)
+    df = processed_data.dropna(axis=0).sort_values('date').reset_index(drop=True)
 
     # Flatten target inputs (they may arrive as List[List[float]] or List[float])
     if isinstance(target_inputs, (list, tuple)) and target_inputs:

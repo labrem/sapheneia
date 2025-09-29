@@ -425,7 +425,8 @@ def api_forecast():
             logger.info(f"✅ Centralized forecasting completed. Methods: {list(results.keys())}")
             logger.info(f"Results structure: {[(k, type(v), len(v) if hasattr(v, '__len__') else 'N/A') for k, v in results.items()]}")
             if 'quantile_forecast' in results:
-                logger.info(f"Quantile forecast shape: {results['quantile_forecast'].shape if hasattr(results['quantile_forecast'], 'shape') else 'N/A'}")
+                shape_quantile = len(results['quantile_forecast']) if hasattr(results['quantile_forecast'], '__len__') else 'N/A'
+                logger.info(f"Quantile forecast shape: {shape_quantile}")
             else:
                 logger.warning("No quantile_forecast in results!")
             
