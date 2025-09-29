@@ -225,7 +225,7 @@ try:
     from model import TimesFMModel
     from data import DataProcessor
     from forecast import Forecaster
-    from visualization import Visualizer
+    from interactive_visualization import InteractiveVisualizer
     print('✅ Sapheneia modules available')
 except ImportError as e:
     print(f'⚠️  Web app imports failed: {e}')

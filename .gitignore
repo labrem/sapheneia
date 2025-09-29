@@ -197,3 +197,9 @@ cython_debug/
 GEMINI.md
 SAPHENEIA.md
 local/
+uploads/
+webapp/uploads/
+
+# macOS
+.DS_Store
+.DS_Store?
