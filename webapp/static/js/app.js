@@ -10,6 +10,7 @@ class SapheneiaTimesFM {
         this.currentResults = null;
         this.currentPlotFigure = null;
         this.currentPlotConfig = null;
+        this.resizeTimeout = null;
         this.init();
     }
 
@@ -771,13 +772,31 @@ class SapheneiaTimesFM {
                     return;
                 }
 
-                const defaultConfig = { responsive: true, displaylogo: false };
+                const defaultConfig = { 
+                    responsive: true, 
+                    displaylogo: false,
+                    autosizable: true
+                };
                 const plotConfig = Object.assign({}, defaultConfig, vizResult.config || {});
-                const layout = Object.assign({}, figurePayload.layout || {}, { autosize: true });
+                const layout = Object.assign({}, figurePayload.layout || {}, { 
+                    autosize: true,
+                    width: null,
+                    height: null
+                });
 
                 try {
                     await Plotly.react(chartContainer, figurePayload.data, layout, plotConfig);
                     chartContainer.style.display = 'block';
+                    
+                    // Make chart responsive to window resize with debouncing
+                    window.addEventListener('resize', () => {
+                        clearTimeout(this.resizeTimeout);
+                        this.resizeTimeout = setTimeout(() => {
+                            if (typeof Plotly !== 'undefined' && chartContainer) {
+                                Plotly.Plots.resize(chartContainer);
+                            }
+                        }, 250);
+                    });
 
                     // Cache the latest figure/config for downloads and refreshes
                     this.currentPlotFigure = Object.assign({}, figurePayload, { layout });
@@ -927,6 +946,13 @@ class SapheneiaTimesFM {
                 setTimeout(() => {
                     window.scrollTo(0, this.visualizationScrollPosition);
                 }, 100); // Small delay to ensure content is rendered
+            }
+            
+            // Resize chart when visualization tab is shown
+            if (this.currentPlotFigure && typeof Plotly !== 'undefined') {
+                setTimeout(() => {
+                    Plotly.Plots.resize(document.getElementById('forecastChart'));
+                }, 200);
             }
         });
         
