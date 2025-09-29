@@ -301,7 +301,7 @@ def initialize_timesfm_model(
     horizon_len: int = 24,
     checkpoint: Optional[str] = None,
     local_model_path: Optional[str] = None
-) -> Tuple[TimesFMModel, 'Forecaster', 'Visualizer']:
+) -> Tuple[TimesFMModel, 'Forecaster', 'InteractiveVisualizer']:
     """
     Centralized function to initialize TimesFM model with all required components.
     
@@ -326,7 +326,7 @@ def initialize_timesfm_model(
     try:
         # Import here to avoid circular imports
         from forecast import Forecaster
-        from visualization import Visualizer
+        from interactive_visualization import InteractiveVisualizer
         
         # Create model wrapper
         model_wrapper = TimesFMModel(
@@ -342,7 +342,7 @@ def initialize_timesfm_model(
         
         # Create forecaster and visualizer
         forecaster = Forecaster(timesfm_model)
-        visualizer = Visualizer(style="professional")
+        visualizer = InteractiveVisualizer(style="professional")
         
         logger.info("✅ TimesFM model initialization completed successfully!")
         logger.info(f"   Model: {model_wrapper.checkpoint or model_wrapper.local_model_path}")

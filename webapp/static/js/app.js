@@ -8,6 +8,9 @@ class SapheneiaTimesFM {
         this.modelInitialized = false;
         this.currentData = null;
         this.currentResults = null;
+        this.currentPlotFigure = null;
+        this.currentPlotConfig = null;
+        this.resizeTimeout = null;
         this.init();
     }
 
@@ -743,52 +746,81 @@ class SapheneiaTimesFM {
             const vizResult = await response.json();
 
             if (vizResult.success) {
-                console.log('Visualization successful, setting image...');
-                const chartImg = document.getElementById('forecastChart');
-                
-                if (!chartImg) {
-                    console.error('Chart image element not found!');
+                if (typeof Plotly === 'undefined') {
+                    console.error('Plotly library not found on window');
+                    this.showAlert('danger', 'Visualization Error', 'Plotly library is not loaded.');
+                    return;
+                }
+
+                const chartContainer = document.getElementById('forecastChart');
+
+                if (!chartContainer) {
+                    console.error('Chart container element not found!');
                     this.showAlert('danger', 'Display Error', 'Chart display element not found');
                     return;
                 }
-                
-                // Scroll to results after the image has fully rendered
-                try {
-                    chartImg.onload = () => {
-                        console.log('Chart image loaded successfully');
-                        const resultsCard = document.getElementById('resultsCard');
-                        if (resultsCard) {
-                            resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
-                        // Clean up the onload handler to avoid duplicate triggers
-                        chartImg.onload = null;
-                    };
-                    
-                    chartImg.onerror = () => {
-                        console.error('Chart image failed to load');
-                        this.showAlert('danger', 'Image Load Error', 'Failed to load chart image');
-                    };
-                } catch (e) {
-                    console.error('Error setting up image handlers:', e);
-                    // Fallback: delayed scroll
-                    setTimeout(() => {
-                        const resultsCard = document.getElementById('resultsCard');
-                        if (resultsCard) {
-                            resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
-                    }, 150);
+
+                const figurePayload = typeof vizResult.figure === 'string'
+                    ? JSON.parse(vizResult.figure)
+                    : (vizResult.figure || {});
+
+                if (!figurePayload.data || !Array.isArray(figurePayload.data) || figurePayload.data.length === 0) {
+                    console.error('Figure payload missing data:', figurePayload);
+                    this.currentPlotFigure = null;
+                    this.currentPlotConfig = null;
+                    this.showAlert('warning', 'Visualization Failed', 'Received empty plot data.');
+                    return;
                 }
-                
-                const imageSrc = 'data:image/png;base64,' + vizResult.image;
-                console.log('Setting image source, length:', imageSrc.length);
-                chartImg.src = imageSrc;
-                chartImg.style.display = 'block';
-                console.log('Image source set, display style set to block');
+
+                const defaultConfig = { 
+                    responsive: true, 
+                    displaylogo: false,
+                    autosizable: true
+                };
+                const plotConfig = Object.assign({}, defaultConfig, vizResult.config || {});
+                const layout = Object.assign({}, figurePayload.layout || {}, { 
+                    autosize: true,
+                    width: null,
+                    height: null
+                });
+
+                try {
+                    await Plotly.react(chartContainer, figurePayload.data, layout, plotConfig);
+                    chartContainer.style.display = 'block';
+                    
+                    // Make chart responsive to window resize with debouncing
+                    window.addEventListener('resize', () => {
+                        clearTimeout(this.resizeTimeout);
+                        this.resizeTimeout = setTimeout(() => {
+                            if (typeof Plotly !== 'undefined' && chartContainer) {
+                                Plotly.Plots.resize(chartContainer);
+                            }
+                        }, 250);
+                    });
+
+                    // Cache the latest figure/config for downloads and refreshes
+                    this.currentPlotFigure = Object.assign({}, figurePayload, { layout });
+                    this.currentPlotConfig = plotConfig;
+
+                    const resultsCard = document.getElementById('resultsCard');
+                    if (resultsCard) {
+                        resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } catch (plotlyError) {
+                    console.error('Plotly rendering failed:', plotlyError);
+                    this.currentPlotFigure = null;
+                    this.currentPlotConfig = null;
+                    this.showAlert('danger', 'Visualization Error', 'Failed to render interactive chart.');
+                }
             } else {
                 console.error('Visualization failed:', vizResult.message);
+                this.currentPlotFigure = null;
+                this.currentPlotConfig = null;
                 this.showAlert('warning', 'Visualization Failed', vizResult.message || 'Failed to generate chart');
             }
         } catch (error) {
+            this.currentPlotFigure = null;
+            this.currentPlotConfig = null;
             this.showAlert('danger', 'Chart Error', 'Failed to generate visualization: ' + error.message);
         } finally {
             this.hideLoading();
@@ -796,20 +828,33 @@ class SapheneiaTimesFM {
     }
 
     downloadChart() {
-        const chartImg = document.getElementById('forecastChart');
-        if (!chartImg.src) {
+        const chartContainer = document.getElementById('forecastChart');
+
+        if (!chartContainer || !this.currentPlotFigure) {
             this.showAlert('warning', 'No Chart', 'No chart available for download.');
             return;
         }
 
-        const link = document.createElement('a');
-        link.download = `sapheneia_forecast_${new Date().toISOString().slice(0, 10)}.png`;
-        link.href = chartImg.src;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        if (typeof Plotly === 'undefined') {
+            this.showAlert('danger', 'Download Error', 'Plotly library is not available.');
+            return;
+        }
 
-        this.showAlert('success', 'Download Started', 'Chart download has started.');
+        const filename = `sapheneia_forecast_${new Date().toISOString().slice(0, 10)}`;
+
+        Plotly.downloadImage(chartContainer, {
+            format: 'png',
+            filename,
+            width: this.currentPlotFigure.layout?.width || 1200,
+            height: this.currentPlotFigure.layout?.height || 800
+        })
+            .then(() => {
+                this.showAlert('success', 'Download Started', 'Chart download has started.');
+            })
+            .catch((error) => {
+                console.error('Plotly download failed:', error);
+                this.showAlert('danger', 'Download Error', 'Failed to download chart image.');
+            });
     }
 
     downloadData() {
@@ -901,6 +946,13 @@ class SapheneiaTimesFM {
                 setTimeout(() => {
                     window.scrollTo(0, this.visualizationScrollPosition);
                 }, 100); // Small delay to ensure content is rendered
+            }
+            
+            // Resize chart when visualization tab is shown
+            if (this.currentPlotFigure && typeof Plotly !== 'undefined') {
+                setTimeout(() => {
+                    Plotly.Plots.resize(document.getElementById('forecastChart'));
+                }, 200);
             }
         });
         

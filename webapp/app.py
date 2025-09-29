@@ -16,17 +16,12 @@ Features:
 import os
 import sys
 import json
-import io
-import base64
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
 import pandas as pd
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
-import matplotlib.pyplot as plt
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
 from werkzeug.utils import secure_filename
 import tempfile
@@ -38,7 +33,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 from model import TimesFMModel, initialize_timesfm_model
 from data import DataProcessor, prepare_visualization_data
 from forecast import Forecaster, run_forecast, process_quantile_bands
-from visualization import Visualizer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -431,7 +425,8 @@ def api_forecast():
             logger.info(f"✅ Centralized forecasting completed. Methods: {list(results.keys())}")
             logger.info(f"Results structure: {[(k, type(v), len(v) if hasattr(v, '__len__') else 'N/A') for k, v in results.items()]}")
             if 'quantile_forecast' in results:
-                logger.info(f"Quantile forecast shape: {results['quantile_forecast'].shape if hasattr(results['quantile_forecast'], 'shape') else 'N/A'}")
+                shape_quantile = len(results['quantile_forecast']) if hasattr(results['quantile_forecast'], '__len__') else 'N/A'
+                logger.info(f"Quantile forecast shape: {shape_quantile}")
             else:
                 logger.warning("No quantile_forecast in results!")
             
@@ -483,6 +478,7 @@ def api_visualize():
         historical_data = viz_data.get('historical_data', [])
         dates_historical = [pd.to_datetime(d) for d in viz_data.get('dates_historical', [])]
         dates_future = [pd.to_datetime(d) for d in viz_data.get('dates_future', [])]
+        actual_future = viz_data.get('actual_future', [])
         target_name = viz_data.get('target_name', 'Value')
         
         # Debug logging
@@ -538,37 +534,37 @@ def api_visualize():
             logger.info(f"Intervals keys: {list(intervals.keys()) if intervals else 'None'}")
             logger.info(f"Dates historical length: {len(dates_historical)}")
             logger.info(f"Dates future length: {len(dates_future)}")
-            
+
             fig = current_visualizer.plot_forecast_with_intervals(
                 historical_data=historical_data,
                 forecast=forecast,
                 intervals=intervals if intervals else None,
+                actual_future=actual_future if actual_future else None,
                 dates_historical=dates_historical,
                 dates_future=dates_future,
                 title=title,
-                target_name=target_name
+                target_name=target_name,
+                show_figure=False
             )
-            logger.info("Plot generated successfully")
+            logger.info("Interactive plot generated successfully")
         except Exception as plot_error:
             logger.error(f"Plot generation failed: {str(plot_error)}")
             import traceback
             traceback.print_exc()
             raise plot_error
-        
-        # Convert to base64
-        img_buffer = io.BytesIO()
-        fig.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', facecolor='white')
-        img_buffer.seek(0)
-        img_data = img_buffer.read()
-        img_base64 = base64.b64encode(img_data).decode('utf-8')
-        plt.close(fig)
-        
-        logger.info(f"Image generated - buffer size: {len(img_data)} bytes, base64 length: {len(img_base64)}")
-        
+
+        figure_payload = json.loads(fig.to_json())
+        plot_config = {
+            'responsive': True,
+            'displaylogo': False,
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+        }
+
         return jsonify({
             'success': True,
             'message': 'Visualization generated successfully',
-            'image': img_base64,
+            'figure': figure_payload,
+            'config': plot_config,
             'used_quantile_intervals': used_quantile_intervals,
             'quantile_shape': quantile_shape
         })
@@ -609,7 +605,7 @@ if __name__ == '__main__':
     if debug:
         logger.info("Development mode - initializing default model")
         init_model(backend='cpu', context_len=64, horizon_len=24, 
-                  checkpoint="google/timesfm-2.0-500m-pytorch")
+                   checkpoint="google/timesfm-2.0-500m-pytorch")
     
     # Run the app
     app.run(host='0.0.0.0', port=port, debug=debug)

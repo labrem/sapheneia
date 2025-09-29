@@ -229,12 +229,36 @@ class Visualizer:
                 # Define colors for different bands
                 band_colors = ['#ff9999', '#99ccff', '#99ff99', '#ffcc99', '#cc99ff', '#ffff99']
                 
+                logger.info(f"Processing {len(quantile_bands)} quantile bands")
+                logger.info(f"Connection_x length: {len(connection_x)}, Forecast length: {len(forecast)}")
+                
                 for i, (band_name, band_data) in enumerate(sorted(quantile_bands.items())):
                     color = band_colors[i % len(band_colors)]
                     alpha = 0.3 + (0.2 * (1 - i / max(1, len(quantile_bands) - 1)))  # Vary alpha
                     
-                    interval_lower = [historical_data[-1]] + list(band_data['lower'])
-                    interval_upper = [historical_data[-1]] + list(band_data['upper'])
+                    # Ensure quantile band data matches forecast length
+                    lower_values = band_data['lower']
+                    upper_values = band_data['upper']
+                    
+                    logger.info(f"Band {band_name}: lower length={len(lower_values)}, upper length={len(upper_values)}")
+                    
+                    # Truncate or pad to match forecast length
+                    if len(lower_values) > len(forecast):
+                        lower_values = lower_values[:len(forecast)]
+                        upper_values = upper_values[:len(forecast)]
+                        logger.info(f"Truncated band {band_name} to forecast length")
+                    elif len(lower_values) < len(forecast):
+                        # Pad with last value if too short
+                        last_lower = lower_values[-1] if lower_values else 0
+                        last_upper = upper_values[-1] if upper_values else 0
+                        lower_values = list(lower_values) + [last_lower] * (len(forecast) - len(lower_values))
+                        upper_values = list(upper_values) + [last_upper] * (len(forecast) - len(upper_values))
+                        logger.info(f"Padded band {band_name} to forecast length")
+                    
+                    interval_lower = [historical_data[-1]] + list(lower_values)
+                    interval_upper = [historical_data[-1]] + list(upper_values)
+                    
+                    logger.info(f"Final interval lengths: lower={len(interval_lower)}, upper={len(interval_upper)}, connection_x={len(connection_x)}")
                     
                     label_key = f'quantile_band_{band_name}_label'
                     label_text = intervals.get(label_key, f'Quantile Band {int(band_name)+1}')
