@@ -513,7 +513,7 @@ def api_visualize():
                 # Use centralized quantile processing
                 intervals = process_quantile_bands(
                     quantile_forecast=quantiles,
-                    selected_indices=selected_indices if selected_indices else None
+                    selected_indices=selected_indices if selected_indices and len(selected_indices) > 0 else []
                 )
                 
                 used_quantile_intervals = len(intervals) > 0

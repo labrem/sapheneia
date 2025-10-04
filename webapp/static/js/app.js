@@ -55,17 +55,12 @@ class SapheneiaTimesFM {
             this.downloadData();
         });
 
-        // Refresh plot
-        document.getElementById('refreshPlot').addEventListener('click', () => {
-            if (this.currentResults) {
-                this.generateVisualization(this.currentResults);
-            } else {
-                this.showAlert('warning', 'No Results', 'Run a forecast first.');
-            }
-        });
 
         // Tab switching - preserve scroll position
         this.setupTabSwitching();
+        
+        // Bind quantile events
+        this.bindQuantileEvents();
     }
 
     setupFormValidation() {
@@ -499,7 +494,6 @@ class SapheneiaTimesFM {
                                 <input class="form-check-input column-checkbox" type="checkbox" 
                                        id="col_${col}" value="${col}" checked>
                                 <label class="form-check-label" for="col_${col}">
-                                    <small>Include</small>
                                 </label>
                             </div>
                         </div>
@@ -572,6 +566,9 @@ class SapheneiaTimesFM {
             return;
         }
 
+        // Clear any previous results/errors
+        this.clearForecastResults();
+
         const selectedColumns = this.getSelectedColumns();
         if (selectedColumns.length === 0) {
             this.showAlert('warning', 'No Variables Selected', 'Please select at least one variable for forecasting.');
@@ -595,14 +592,12 @@ class SapheneiaTimesFM {
             horizon_len: parseInt(document.getElementById('horizonLen').value)
         };
         
-        // Attach user-selected quantile ticks (always on; default [1,9])
+        // Attach user-selected quantile ticks (no default - respect user selection)
         let ticks = Array.from(document.querySelectorAll('.quantile-tick'))
             .filter(cb => cb.checked)
             .map(cb => parseInt(cb.value))
             .sort((a,b) => a - b);
-        if (ticks.length < 2) {
-            ticks = [1, 9];
-        }
+        // Don't set default quantiles - pass empty array if none selected
         config.quantile_indices = ticks;
 
         this.showLoading('Running Forecast', 'TimesFM is analyzing your data and generating forecasts...');
@@ -618,7 +613,7 @@ class SapheneiaTimesFM {
 
             const result = await response.json();
 
-            if (result.success) {
+            if (response.ok && result.success) {
                 console.log('Forecast successful, proceeding to display and visualize...');
                 this.currentResults = result;
                 this.showAlert('success', 'Forecast Complete', 'Forecasting completed successfully!');
@@ -637,12 +632,231 @@ class SapheneiaTimesFM {
                     console.error('Error calling generateVisualization:', vizError);
                 }
             } else {
-                this.showAlert('danger', 'Forecast Failed', result.message || 'Forecasting failed');
+                // Handle both HTTP errors and API errors
+                const errorMessage = result.message || `HTTP ${response.status}: ${response.statusText}`;
+                console.log('Forecast error received:', { result, response: { status: response.status, statusText: response.statusText } });
+                this.displayForecastError(errorMessage);
+                this.showAlert('danger', 'Forecast Failed', 'Please check the error details below.');
             }
         } catch (error) {
-            this.showAlert('danger', 'Network Error', 'Forecasting failed: ' + error.message);
+            this.displayForecastError('Network Error: ' + error.message);
+            this.showAlert('danger', 'Network Error', 'Please check the error details below.');
         } finally {
             this.hideLoading();
+        }
+    }
+
+    displayForecastError(errorMessage) {
+        console.log('Displaying forecast error:', errorMessage);
+        const resultsCard = document.getElementById('resultsCard');
+        const cardBody = resultsCard.querySelector('.card-body');
+        
+        console.log('Found elements:', { resultsCard, cardBody });
+        
+        // Clear any existing results and hide tabs
+        const resultTabs = document.getElementById('resultTabs');
+        const resultTabContent = document.getElementById('resultTabContent');
+        
+        if (resultTabs) resultTabs.style.display = 'none';
+        if (resultTabContent) resultTabContent.style.display = 'none';
+        
+        // Create error display
+        const errorHtml = `
+            <div class="alert alert-danger" role="alert">
+                <h5 class="alert-heading">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Forecast Error
+                </h5>
+                <hr>
+                <div class="error-details">
+                    <h6>Error Details:</h6>
+                    <pre class="bg-light p-3 rounded mt-2" style="white-space: pre-wrap; font-size: 0.9rem;">${errorMessage}</pre>
+                </div>
+                <div class="mt-3">
+                    <h6>Common Solutions:</h6>
+                    <ul class="mb-0">
+                        <li>Check that your data definition is correct (especially static vs dynamic covariates)</li>
+                        <li>Ensure all selected variables have valid data (no missing values in critical columns)</li>
+                        <li>Verify that at least one variable is defined as "Target"</li>
+                        <li>Check that your data has enough historical points for the selected context length</li>
+                    </ul>
+                </div>
+            </div>
+        `;
+        
+        cardBody.innerHTML = errorHtml;
+        resultsCard.style.display = 'block';
+        resultsCard.classList.add('fade-in');
+    }
+
+    clearForecastResults() {
+        const resultsCard = document.getElementById('resultsCard');
+        
+        if (resultsCard) {
+            resultsCard.style.display = 'none';
+            // Reset the card body to its original structure
+            const cardBody = resultsCard.querySelector('.card-body');
+            if (cardBody) {
+                // Restore original structure
+                cardBody.innerHTML = `
+                    <!-- Tabs for different result views -->
+                    <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="visualization-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#visualization" type="button" role="tab">
+                                <i class="fas fa-chart-area me-1"></i>
+                                Visualization
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="summary-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#summary" type="button" role="tab">
+                                <i class="fas fa-list me-1"></i>
+                                Summary
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="data-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#data" type="button" role="tab">
+                                <i class="fas fa-table me-1"></i>
+                                Data
+                            </button>
+                        </li>
+                    </ul>
+
+                    <!-- Tab Content -->
+                    <div class="tab-content mt-3" id="resultTabContent">
+                        <!-- Visualization Tab -->
+                        <div class="tab-pane fade show active" id="visualization" role="tabpanel">
+                            <div class="chart-container">
+                                <div id="forecastChart"></div>
+                            </div>
+                            <div class="mt-3">
+                                <button type="button" class="btn btn-outline-primary" id="downloadChart">
+                                    <i class="fas fa-download me-2"></i>
+                                    Download Chart
+                                </button>
+                                <button type="button" class="btn btn-outline-success ms-2" id="downloadData">
+                                    <i class="fas fa-table me-2"></i>
+                                    Download Data
+                                </button>
+                            </div>
+                            <!-- Quantile selection (always visible) -->
+                            <div class="row mt-3" id="quantileSelector">
+                                <div class="col-12">
+                                    <label class="form-label">Select quantiles to shade (choose lower and upper)</label>
+                                    <div class="d-flex flex-wrap gap-2" id="quantileCheckboxes">
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="1" id="q1" checked>
+                                            <label class="form-check-label" for="q1">Q10</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="2" id="q2">
+                                            <label class="form-check-label" for="q2">Q20</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="3" id="q3">
+                                            <label class="form-check-label" for="q3">Q30</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="4" id="q4">
+                                            <label class="form-check-label" for="q4">Q40</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="5" id="q5">
+                                            <label class="form-check-label" for="q5">Q50</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="6" id="q6">
+                                            <label class="form-check-label" for="q6">Q60</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="7" id="q7">
+                                            <label class="form-check-label" for="q7">Q70</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="8" id="q8">
+                                            <label class="form-check-label" for="q8">Q80</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input quantile-tick" type="checkbox" value="9" id="q9" checked>
+                                            <label class="form-check-label" for="q9">Q90</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Summary Tab -->
+                        <div class="tab-pane fade" id="summary" role="tabpanel">
+                            <div id="summaryContent">
+                                <p class="text-muted">Summary will appear here after forecasting.</p>
+                            </div>
+                        </div>
+
+                        <!-- Data Tab -->
+                        <div class="tab-pane fade" id="data" role="tabpanel">
+                            <div id="dataContent">
+                                <p class="text-muted">Data will appear here after forecasting.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Re-bind quantile change events
+            this.bindQuantileEvents();
+            
+            // Re-bind download button events
+            this.bindDownloadEvents();
+        }
+    }
+
+    bindQuantileEvents() {
+        // Bind change events to quantile checkboxes
+        document.querySelectorAll('.quantile-tick').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.refreshVisualization();
+            });
+        });
+    }
+
+    refreshVisualization() {
+        // Only refresh if we have current results
+        if (this.currentResults && this.currentResults.success) {
+            console.log('Refreshing visualization with new quantile selection...');
+            
+            // Get selected quantiles (empty array if none selected)
+            const selectedQuantiles = document.querySelectorAll('.quantile-tick:checked');
+            const quantileIndices = Array.from(selectedQuantiles)
+                .map(cb => parseInt(cb.value))
+                .sort((a, b) => a - b);
+            
+            console.log('Selected quantile indices:', quantileIndices);
+            console.log('Number of selected quantiles:', quantileIndices.length);
+            
+            // Create a copy of results with updated quantile indices
+            const updatedResults = { ...this.currentResults };
+            updatedResults.quantile_indices = quantileIndices;
+            
+            this.generateVisualization(updatedResults);
+        }
+    }
+
+    bindDownloadEvents() {
+        // Re-bind download button events after HTML recreation
+        const downloadChartBtn = document.getElementById('downloadChart');
+        const downloadDataBtn = document.getElementById('downloadData');
+        
+        if (downloadChartBtn) {
+            downloadChartBtn.addEventListener('click', () => {
+                this.downloadChart();
+            });
+        }
+        
+        if (downloadDataBtn) {
+            downloadDataBtn.addEventListener('click', () => {
+                this.downloadData();
+            });
         }
     }
 
@@ -806,7 +1020,9 @@ class SapheneiaTimesFM {
                             .filter(cb => cb.checked)
                             .map(cb => parseInt(cb.value))
                             .sort((a,b) => a-b);
-                        if (t.length < 2) t = [1,9];
+                        console.log('generateVisualization - quantile indices being sent:', t);
+                        console.log('generateVisualization - number of quantiles:', t.length);
+                        // Don't set default quantiles - pass empty array if none selected
                         return t;
                     })()
                 })

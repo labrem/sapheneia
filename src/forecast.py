@@ -358,9 +358,14 @@ def process_quantile_bands(
         # logger.info(f"!!!!!!!!!!!!! selected_indices: {selected_indices}")
         # logger.info(f"!!!!!!!!!!!!! quantile_forecast.shape: {quantile_forecast.shape}")
 
-        # Default quantile indices if none provided (skip index 0 - legacy mean)
+        # Handle quantile indices - only use default if explicitly None (not empty list)
         if selected_indices is None:
+            # This means no quantile selection was made, use default
             selected_indices = [1, 3, 5, 7, 9]  # Q10, Q30, Q50, Q70, Q90
+        elif selected_indices == []:
+            # This means user explicitly selected no quantiles, return empty
+            logger.info("No quantiles selected by user - returning empty quantile bands")
+            return {}
         
         # Handle different array dimensions
         if quantile_forecast.ndim == 3:
