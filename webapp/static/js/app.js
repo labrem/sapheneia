@@ -430,6 +430,9 @@ class SapheneiaTimesFM {
         dataDetailsDiv.innerHTML = html;
         dataInfoDiv.style.display = 'block';
         dataInfoDiv.classList.add('fade-in');
+        
+        // Generate data definition with integrated checkboxes
+        this.generateDataDefinition(dataInfo.columns);
     }
 
     formatValue(value) {
@@ -440,6 +443,41 @@ class SapheneiaTimesFM {
         return String(value).substring(0, 20) + (String(value).length > 20 ? '...' : '');
     }
 
+
+    bindColumnSelectionEvents() {
+        // Select all button
+        document.getElementById('selectAllColumns').addEventListener('click', () => {
+            document.querySelectorAll('.column-checkbox').forEach(cb => {
+                cb.checked = true;
+            });
+        });
+
+        // Deselect all button
+        document.getElementById('deselectAllColumns').addEventListener('click', () => {
+            document.querySelectorAll('.column-checkbox').forEach(cb => {
+                cb.checked = false;
+            });
+        });
+
+        // Individual checkbox change events
+        document.querySelectorAll('.column-checkbox').forEach(cb => {
+            cb.addEventListener('change', () => {
+                this.updateColumnSelectionState();
+            });
+        });
+    }
+
+    updateColumnSelectionState() {
+        // This function can be used for any additional state updates if needed
+        // Currently, the checkboxes are integrated into the data definition section
+    }
+
+    getSelectedColumns() {
+        return Array.from(document.querySelectorAll('.column-checkbox:checked'))
+                   .map(cb => cb.value);
+    }
+
+
     generateDataDefinition(columns, isSampleData = false) {
         const definitionDiv = document.getElementById('dataDefinition');
         const columnsDiv = document.getElementById('columnDefinitions');
@@ -449,14 +487,23 @@ class SapheneiaTimesFM {
         columns.forEach((col, index) => {
             if (col === 'date') return; // Skip date column
 
-            // Default to target for first non-date column, others as dynamic_numerical
+            // Default to target for first column, others as dynamic_numerical
             const defaultValue = index === 1 ? 'target' : 'dynamic_numerical';
             
             html += `
                 <div class="col-md-6 col-lg-4">
                     <div class="column-definition">
-                        <div class="column-name">${col}</div>
-                        <select class="form-select form-select-sm mt-2" id="def_${col}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="column-name">${col}</div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input column-checkbox" type="checkbox" 
+                                       id="col_${col}" value="${col}" checked>
+                                <label class="form-check-label" for="col_${col}">
+                                    <small>Include</small>
+                                </label>
+                            </div>
+                        </div>
+                        <select class="form-select form-select-sm" id="def_${col}">
                             <option value="target" ${defaultValue === 'target' ? 'selected' : ''}>Target (main forecast variable)</option>
                             <option value="dynamic_numerical" ${defaultValue === 'dynamic_numerical' ? 'selected' : ''}>Dynamic Numerical</option>
                             <option value="dynamic_categorical" ${defaultValue === 'dynamic_categorical' ? 'selected' : ''}>Dynamic Categorical</option>
@@ -469,16 +516,32 @@ class SapheneiaTimesFM {
         });
 
         html += '</div>';
+        
+        // Add control buttons
+        html += `
+            <div class="mt-3">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="selectAllColumns">
+                    <i class="fas fa-check-square me-1"></i>Select All
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="deselectAllColumns">
+                    <i class="fas fa-square me-1"></i>Deselect All
+                </button>
+            </div>
+        `;
+
         columnsDiv.innerHTML = html;
         definitionDiv.style.display = 'block';
         definitionDiv.classList.add('fade-in');
+
+        // Bind event listeners
+        this.bindColumnSelectionEvents();
     }
 
     getDataDefinition() {
         const definition = {};
-        const columns = this.currentData.columns.filter(col => col !== 'date');
+        const selectedColumns = this.getSelectedColumns();
 
-        columns.forEach(col => {
+        selectedColumns.forEach(col => {
             const select = document.getElementById(`def_${col}`);
             if (select) {
                 definition[col] = select.value;
@@ -509,12 +572,18 @@ class SapheneiaTimesFM {
             return;
         }
 
+        const selectedColumns = this.getSelectedColumns();
+        if (selectedColumns.length === 0) {
+            this.showAlert('warning', 'No Variables Selected', 'Please select at least one variable for forecasting.');
+            return;
+        }
+
         const dataDefinition = this.getDataDefinition();
         
         // Validate that at least one target column is defined
         const hasTarget = Object.values(dataDefinition).includes('target');
         if (!hasTarget) {
-            this.showAlert('warning', 'No Target Variable', 'Please define at least one column as the target variable.');
+            this.showAlert('warning', 'No Target Variable', 'Please define at least one selected column as the target variable.');
             return;
         }
 

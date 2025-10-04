@@ -36,11 +36,7 @@
 #       * jax and jaxlib for numerical computation.
 #       * timesfm (the appropriate version for your system).
 #       * jupyter, ipykernel, ipywidgets for running the notebooks.
-#
-       * numpy, pandas, matplotlib, seaborn for data manipulation and visualization.
-#       * jax and jaxlib for numerical computation.
-#       * timesfm (the appropriate version for your system).
-#       * jupyter, ipykernel, ipywidgets for running the notebooks.
+#       * plotly for interactive visualizations in the web application.
 #
 #   6. Installs Web App Dependencies: If a full or webapp-only setup is selected, it installs the dependencies listed in webapp/requirements.txt, which includes Flask for the web server.
 #
@@ -120,7 +116,7 @@ install_uv() {
     curl -LsSf https://astral.sh/uv/install.sh | sh
     
     # Add UV to PATH for current session
-    export PATH="$HOME/.cargo/bin:$PATH"
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
     
     if command_exists uv; then
         print_status "UV installed successfully: $(uv --version)"
@@ -173,6 +169,9 @@ install_core_dependencies() {
     
     print_status "Installing Jupyter notebook support..."
     uv pip install jupyter notebook ipykernel ipywidgets
+    
+    print_status "Installing Plotly for interactive visualizations..."
+    uv pip install plotly
 }
 
 # Function to install webapp dependencies
@@ -193,9 +192,11 @@ import timesfm
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 print('✅ TimesFM imported successfully')
 print('✅ Core dependencies available')
+print('✅ Plotly imported successfully')
 
 # Test basic TimesFM functionality
 try:
@@ -219,6 +220,9 @@ print('✅ Installation verification completed')
 try:
     from flask import Flask
     print('✅ Flask available')
+    
+    import plotly.graph_objects as go
+    print('✅ Plotly available')
     
     import sys
     sys.path.append('src')
@@ -398,12 +402,13 @@ REQUIREMENTS:
 The script will:
 1. Install UV package manager
 2. Create Python virtual environment
-3. Install TimesFM and dependencies
+3. Install TimesFM and dependencies (including Plotly for interactive visualizations)
 4. Setup project structure
 5. Verify installation
 
 For web application setup, it will additionally:
 - Install Flask and web dependencies
+- Install Plotly for interactive visualizations
 - Create webapp deployment files
 - Setup GCP deployment scripts (if requested)
 

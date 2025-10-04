@@ -68,6 +68,28 @@ body {
     padding: 0.5rem 0.75rem;
 }
 
+/* Column Selection Styles */
+.column-checkbox {
+    transform: scale(1.1);
+}
+
+.column-checkbox:checked {
+    background-color: var(--sapheneia-success);
+    border-color: var(--sapheneia-success);
+}
+
+.form-check-label {
+    font-weight: 500;
+    color: var(--sapheneia-dark);
+    cursor: pointer;
+    transition: color 0.2s ease-in-out;
+    font-size: 0.85rem;
+}
+
+.form-check-label:hover {
+    color: var(--sapheneia-primary);
+}
+
 /* Data Definition Styles */
 .column-definition {
     background-color: white;
