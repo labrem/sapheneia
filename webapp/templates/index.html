@@ -31,6 +31,63 @@
         <!-- Alert Container -->
         <div id="alertContainer"></div>
 
+        <!-- Data Upload Card -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-upload me-2"></i>
+                    Data Upload & Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Upload CSV File</h6>
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="dataFile" accept=".csv">
+                            <div class="form-text">
+                                CSV file with 'date' column required. Max size: 16MB.<br>
+                                <strong>Recommended:</strong> Navigate to the <code>/local</code> directory in your project workspace.
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-success" id="uploadBtn">
+                            <i class="fas fa-upload me-2"></i>
+                            Upload Data
+                        </button>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Data Requirements</h6>
+                        <p class="text-muted">
+                            Your CSV file must contain:
+                        </p>
+                        <ul class="text-muted">
+                            <li>A 'date' column as the first column</li>
+                            <li>At least one target time series column</li>
+                            <li>Optional: covariate columns for enhanced forecasting</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Data Info Section -->
+                <div id="dataInfo" style="display: none;" class="mt-4">
+                    <hr>
+                    <h6>Data Information</h6>
+                    <div id="dataDetails"></div>
+                </div>
+
+
+                <!-- Data Definition Section -->
+                <div id="dataDefinition" style="display: none;" class="mt-4">
+                    <hr>
+                    <h6>Data Definition</h6>
+                    <p class="text-muted">
+                        Select which variables to include in your forecast and define how each should be used:
+                    </p>
+                    <div id="columnDefinitions"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Model Configuration Card -->
         <div class="card mb-4">
             <div class="card-header bg-primary text-white">
@@ -40,6 +97,49 @@
                 </h5>
             </div>
             <div class="card-body">
+                <!-- Context Dates Section -->
+                <div id="contextDatesSection" style="display: none;" class="mb-4">
+                    <h6 class="mb-3">
+                        <i class="fas fa-calendar-alt me-2"></i>
+                        Context Dates
+                    </h6>
+                    <p class="text-muted">
+                        Configure the context period (historical data) for forecasting:
+                    </p>
+                    <div class="alert alert-info mb-3">
+                        <small>
+                            <strong>Available Data:</strong> <span id="availableDataLength">0</span> periods 
+                            (<span id="availableDataRange">-</span>)
+                        </small>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Start Date</label>
+                                <select class="form-control" id="contextStartDate">
+                                    <option value="">Select start date...</option>
+                                </select>
+                                <div class="form-text">Start of historical data period</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">End Date</label>
+                                <select class="form-control" id="contextEndDate">
+                                    <option value="">Select end date...</option>
+                                </select>
+                                <div class="form-text">End of historical data period</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="alert alert-info">
+                        <small>
+                            <strong>Context Length:</strong> <span id="contextLengthDisplay">0</span> periods<br>
+                            <strong>Constraint:</strong> Must be multiple of 32, max 4096 total
+                        </small>
+                    </div>
+                </div>
+
                 <form id="modelConfigForm">
                     <div class="row">
                         <div class="col-md-3">
@@ -99,61 +199,6 @@
             </div>
         </div>
 
-        <!-- Data Upload Card -->
-        <div class="card mb-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-upload me-2"></i>
-                    Data Upload & Configuration
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>Upload CSV File</h6>
-                        <div class="mb-3">
-                            <input type="file" class="form-control" id="dataFile" accept=".csv">
-                            <div class="form-text">
-                                CSV file with 'date' column required. Max size: 16MB.<br>
-                                <strong>Recommended:</strong> Navigate to the <code>/local</code> directory in your project workspace.
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-success" id="uploadBtn">
-                            <i class="fas fa-upload me-2"></i>
-                            Upload Data
-                        </button>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>Data Requirements</h6>
-                        <p class="text-muted">
-                            Your CSV file must contain:
-                        </p>
-                        <ul class="text-muted">
-                            <li>A 'date' column as the first column</li>
-                            <li>At least one target time series column</li>
-                            <li>Optional: covariate columns for enhanced forecasting</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <!-- Data Info Section -->
-                <div id="dataInfo" style="display: none;" class="mt-4">
-                    <hr>
-                    <h6>Data Information</h6>
-                    <div id="dataDetails"></div>
-                </div>
-
-                <!-- Data Definition Section -->
-                <div id="dataDefinition" style="display: none;" class="mt-4">
-                    <hr>
-                    <h6>Data Definition</h6>
-                    <p class="text-muted">
-                        Select which variables to include in your forecast and define how each should be used:
-                    </p>
-                    <div id="columnDefinitions"></div>
-                </div>
-            </div>
-        </div>
 
         <!-- Forecasting Configuration Card -->
         <div class="card mb-4">

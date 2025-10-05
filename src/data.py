@@ -182,16 +182,22 @@ class DataProcessor:
             target_column = target_columns[0]
             logger.info(f"Using target column: {target_column}")
         
-        # Validate data length
-        total_required = context_len + horizon_len
-        if len(data) < total_required:
-            raise ValueError(f"Insufficient data: need {total_required} points, have {len(data)}")
+        # Validate data length - only need context_len for the data
+        if len(data) < context_len:
+            raise ValueError(f"Insufficient data: need {context_len} points, have {len(data)}")
         
-        # Prepare target inputs using the most recent context window before the forecast horizon
+        # Prepare target inputs using the most recent context window
         target_series = data[target_column].values
-        context_start = max(0, len(data) - total_required)
-        context_end = context_start + context_len
+        context_start = max(0, len(data) - context_len)
+        context_end = len(data)  # Use last context_len periods
         target_inputs = target_series[context_start:context_end].tolist()
+        
+        logger.info(f"Target data preparation:")
+        logger.info(f"  - Target column: {target_column}")
+        logger.info(f"  - Context start index: {context_start}")
+        logger.info(f"  - Context end index: {context_end}")
+        logger.info(f"  - Target inputs length: {len(target_inputs)}")
+        logger.info(f"  - Target range: {min(target_inputs):.2f} - {max(target_inputs):.2f}")
         
         # Prepare covariates
         covariates = self._prepare_covariates(data, context_len, horizon_len)
@@ -227,9 +233,19 @@ class DataProcessor:
             'static_categorical_covariates': {}
         }
         
+        # For dynamic covariates, we need context_len + horizon_len total periods
+        # Context period: last context_len periods of available data
+        # Horizon period: horizon_len periods (padded with last known values)
         total_len = context_len + horizon_len
-        start_idx = max(0, len(data) - total_len)
-        end_idx = start_idx + total_len
+        
+        logger.info(f"Covariate preparation debug:")
+        logger.info(f"  - Data length: {len(data)}")
+        logger.info(f"  - Context length: {context_len}")
+        logger.info(f"  - Horizon length: {horizon_len}")
+        logger.info(f"  - Total periods needed: {total_len}")
+        logger.info(f"  - Data date range: {data['date'].min()} to {data['date'].max()}")
+        logger.info(f"  - Context period: last {context_len} periods of data")
+        logger.info(f"  - Horizon period: {horizon_len} periods (padded with last known values)")
 
         for column, data_type in self.data_definition.items():
             if column == 'date' or data_type == 'target':
@@ -237,23 +253,51 @@ class DataProcessor:
             
             if data_type == 'dynamic_numerical':
                 # Dynamic numerical: need context + horizon values
-                if len(data) < total_len:
-                    logger.warning(f"Insufficient data for dynamic covariate '{column}': need {total_len}, have {len(data)}")
+                # Context: last context_len periods of available data
+                # Horizon: horizon_len periods (padded with last known value)
+                
+                if len(data) < context_len:
+                    logger.warning(f"Insufficient data for dynamic covariate '{column}': need {context_len} for context, have {len(data)}")
                     continue
                 
-                values = data[column].iloc[start_idx:end_idx].tolist()
+                # Get context values (last context_len periods)
+                context_values = data[column].iloc[-context_len:].tolist()
+                
+                # Get horizon values (pad with last known value)
+                last_value = context_values[-1]
+                horizon_values = [last_value] * horizon_len
+                
+                # Combine context + horizon
+                values = context_values + horizon_values
+                
                 covariates['dynamic_numerical_covariates'][column] = [values]
                 logger.info(f"Added dynamic numerical covariate '{column}': {len(values)} values")
+                logger.info(f"  - Context period: {len(context_values)} values (last {context_len} periods)")
+                logger.info(f"  - Horizon period: {len(horizon_values)} values (padded with {last_value})")
                 
             elif data_type == 'dynamic_categorical':
                 # Dynamic categorical: need context + horizon values
-                if len(data) < total_len:
-                    logger.warning(f"Insufficient data for dynamic covariate '{column}': need {total_len}, have {len(data)}")
+                # Context: last context_len periods of available data
+                # Horizon: horizon_len periods (padded with last known value)
+                
+                if len(data) < context_len:
+                    logger.warning(f"Insufficient data for dynamic covariate '{column}': need {context_len} for context, have {len(data)}")
                     continue
                 
-                values = data[column].astype(str).iloc[start_idx:end_idx].tolist()
+                # Get context values (last context_len periods)
+                context_values = data[column].astype(str).iloc[-context_len:].tolist()
+                
+                # Get horizon values (pad with last known value)
+                last_value = context_values[-1]
+                horizon_values = [last_value] * horizon_len
+                
+                # Combine context + horizon
+                values = context_values + horizon_values
+                
                 covariates['dynamic_categorical_covariates'][column] = [values]
                 logger.info(f"Added dynamic categorical covariate '{column}': {len(values)} values")
+                logger.info(f"  - Context period: {len(context_values)} values (last {context_len} periods)")
+                logger.info(f"  - Horizon period: {len(horizon_values)} values (padded with '{last_value}')")
                 
             elif data_type == 'static_numerical':
                 # Static numerical: single value per time series
@@ -405,7 +449,8 @@ def prepare_visualization_data(
     target_inputs: Union[List[float], List[List[float]]],
     target_column: str,
     context_len: int,
-    horizon_len: int
+    horizon_len: int,
+    extended_data: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
     """
     Centralized function to prepare visualization data from processed data.
@@ -452,27 +497,86 @@ def prepare_visualization_data(
 
     # Respect the actual context length used
     context_len_effective = len(target_inputs_flat) or context_len
-
-    total_required = context_len_effective + horizon_len
     available_len = len(df)
 
-    # Determine the slice that corresponds to the model context
-    if available_len >= total_required:
-        context_end = available_len - horizon_len
-        context_start = max(0, context_end - context_len_effective)
-    else:
-        context_end = available_len
-        context_start = max(0, context_end - context_len_effective)
-
-    historical_slice = df[target_column].iloc[context_start:context_end].astype(float).tolist()
-    if not historical_slice and target_inputs_flat:
+    # Use target_inputs as historical data to ensure exact alignment with forecasting
+    # This guarantees that the historical data in visualization matches what was used for forecasting
+    if target_inputs_flat:
         historical_slice = list(map(float, target_inputs_flat))
+        
+        # For dates, we need to find the corresponding dates for the target_inputs
+        # Since target_inputs represents the last context_len periods used for forecasting,
+        # we need to find the dates that correspond to those exact data points
+        if len(df) >= context_len_effective:
+            # Get the dates for the last context_len periods (same as target_inputs)
+            dates_historical = df['date'].iloc[-context_len_effective:].tolist()
+        else:
+            # If we don't have enough data, use what we have
+            dates_historical = df['date'].tolist()
+            
+        logger.info(f"Using target_inputs for historical data to ensure forecasting alignment")
+    else:
+        # Fallback to data-based extraction if target_inputs not available
+        if len(df) >= context_len_effective:
+            historical_slice = df[target_column].iloc[-context_len_effective:].astype(float).tolist()
+            dates_historical = df['date'].iloc[-context_len_effective:].tolist()
+        else:
+            historical_slice = df[target_column].astype(float).tolist()
+            dates_historical = df['date'].tolist()
+            
+        logger.info(f"Using data-based extraction for historical data")
+    
+    logger.info(f"Visualization data preparation:")
+    logger.info(f"  - Processed data shape: {df.shape}")
+    logger.info(f"  - Target column: {target_column}")
+    logger.info(f"  - Context length effective: {context_len_effective}")
+    logger.info(f"  - Historical slice length: {len(historical_slice)}")
+    logger.info(f"  - Target inputs flat length: {len(target_inputs_flat)}")
+    logger.info(f"  - Dates historical length: {len(dates_historical)}")
+    logger.info(f"  - Historical data range: {min(historical_slice) if historical_slice else 'N/A'} to {max(historical_slice) if historical_slice else 'N/A'}")
+    if dates_historical:
+        logger.info(f"  - First historical date: {dates_historical[0]}")
+        logger.info(f"  - Last historical date: {dates_historical[-1]}")
 
-    dates_historical = df['date'].iloc[context_start:context_end].tolist()
-
+    # For future dates, we need to generate them since we only have context data
     # Extract actual future values when present (useful for overlaying actuals)
-    future_slice = df[target_column].iloc[context_end:context_end + horizon_len].astype(float).tolist()
-    dates_future = df['date'].iloc[context_end:context_end + horizon_len].tolist()
+    # The actual future values should start from the day after the last historical date
+    # Use extended_data if available (includes horizon period), otherwise use df
+    data_for_future_extraction = extended_data if extended_data is not None else df
+    
+    if len(data_for_future_extraction) > context_len_effective and dates_historical:
+        # Find the last historical date (this is the context end date)
+        last_historical_date = dates_historical[-1]
+        
+        # Find data points that come after the last historical date
+        future_mask = data_for_future_extraction['date'] > last_historical_date
+        future_data = data_for_future_extraction[future_mask]
+        
+        if len(future_data) > 0:
+            # Take only the first horizon_len periods of future data
+            future_slice = future_data[target_column].iloc[:horizon_len].astype(float).tolist()
+            dates_future = future_data['date'].iloc[:horizon_len].tolist()
+            
+            logger.info(f"Actual future values extracted:")
+            logger.info(f"  - Data for extraction length: {len(data_for_future_extraction)}")
+            logger.info(f"  - Context length effective: {context_len_effective}")
+            logger.info(f"  - Last historical date (context end): {last_historical_date}")
+            logger.info(f"  - Future data available: {len(future_data)} periods")
+            logger.info(f"  - Future slice length: {len(future_slice)}")
+            logger.info(f"  - Future dates length: {len(dates_future)}")
+            if future_slice and dates_future:
+                logger.info(f"  - Future values range: {min(future_slice):.4f} to {max(future_slice):.4f}")
+                logger.info(f"  - First future date: {dates_future[0]}")
+                logger.info(f"  - Last future date: {dates_future[-1]}")
+        else:
+            future_slice = []
+            dates_future = []
+            logger.info("No actual future values available - no data after last historical date")
+    else:
+        # No actual future values available
+        future_slice = []
+        dates_future = []
+        logger.info("No actual future values available - data doesn't extend beyond context period")
 
     if len(dates_future) < horizon_len:
         # Generate future dates if the dataset stops at the forecast boundary

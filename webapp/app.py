@@ -188,10 +188,15 @@ def api_upload_data():
             if has_date:
                 try:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
+                    # Get all unique dates in the data
+                    available_dates = df['date'].dropna().dt.date.unique()
+                    available_dates = sorted([str(date) for date in available_dates])
+                    
                     df_info['date_range'] = {
                         'start': str(df['date'].min().date()) if not df['date'].isnull().all() else None,
                         'end': str(df['date'].max().date()) if not df['date'].isnull().all() else None,
-                        'periods': len(df)
+                        'periods': len(df),
+                        'available_dates': available_dates
                     }
                 except Exception as date_error:
                     logger.warning(f"Date parsing failed: {date_error}")
@@ -355,12 +360,46 @@ def api_forecast():
         data_processor = DataProcessor()
         processed_data = data_processor.load_csv_data(filepath, data_definition)
         
-        # Check data sufficiency
-        total_required = context_len + horizon_len
-        if len(processed_data) < total_required:
+        # Filter data based on context dates if provided
+        context_start_date = data.get('context_start_date')
+        context_end_date = data.get('context_end_date')
+        
+        if context_start_date and context_end_date:
+            # Convert string dates to datetime
+            context_start = pd.to_datetime(context_start_date)
+            context_end = pd.to_datetime(context_end_date)
+            
+            # For visualization, we need data that includes both context and horizon periods
+            # Calculate horizon end date (horizon_len periods after context_end)
+            horizon_end = context_end + pd.Timedelta(days=horizon_len * 7)  # Assuming weekly data
+            
+            # Filter data to include both context and horizon periods for actual future values
+            processed_data_for_viz = processed_data[
+                (processed_data['date'] >= context_start) & 
+                (processed_data['date'] <= horizon_end)
+            ].reset_index(drop=True)
+            
+            # For forecasting, we still only use the context period
+            processed_data_for_forecast = processed_data[
+                (processed_data['date'] >= context_start) & 
+                (processed_data['date'] <= context_end)
+            ].reset_index(drop=True)
+            
+            logger.info(f"Filtered data for forecasting: {context_start_date} to {context_end_date}")
+            logger.info(f"Forecast data shape: {processed_data_for_forecast.shape}")
+            logger.info(f"Forecast data date range: {processed_data_for_forecast['date'].min()} to {processed_data_for_forecast['date'].max()}")
+            logger.info(f"Filtered data for visualization: {context_start_date} to {horizon_end.strftime('%Y-%m-%d')}")
+            logger.info(f"Visualization data shape: {processed_data_for_viz.shape}")
+            logger.info(f"Visualization data date range: {processed_data_for_viz['date'].min()} to {processed_data_for_viz['date'].max()}")
+            
+            # Use forecast data for the actual forecasting
+            processed_data = processed_data_for_forecast
+        
+        # Check data sufficiency - only need context_len for the data
+        if len(processed_data) < context_len:
             return jsonify({
                 'success': False, 
-                'message': f'Insufficient data. Need {total_required} periods, have {len(processed_data)}'
+                'message': f'Insufficient data. Need {context_len} periods, have {len(processed_data)}'
             }), 400
         
         # Prepare forecast data
@@ -376,6 +415,88 @@ def api_forecast():
         target_inputs, covariates = data_processor.prepare_forecast_data(
             processed_data, context_len, horizon_len, target_column
         )
+        
+        # Debug: Log covariate information
+        logger.info(f"Forecast data preparation completed:")
+        logger.info(f"  - Context length: {context_len}")
+        logger.info(f"  - Horizon length: {horizon_len}")
+        logger.info(f"  - Processed data shape: {processed_data.shape}")
+        logger.info(f"  - Processed data date range: {processed_data['date'].min()} to {processed_data['date'].max()}")
+        logger.info(f"  - Target inputs length: {len(target_inputs)}")
+        logger.info(f"  - Covariates keys: {list(covariates.keys()) if covariates else 'None'}")
+        
+        if covariates:
+            for cov_type, cov_data in covariates.items():
+                if isinstance(cov_data, dict):
+                    logger.info(f"  - {cov_type} covariates: {len(cov_data)} items")
+                    for key, value in cov_data.items():
+                        if isinstance(value, list):
+                            logger.info(f"    - {key}: {len(value)} values")
+                        elif isinstance(value, np.ndarray):
+                            logger.info(f"    - {key}: shape {value.shape}")
+                        else:
+                            logger.info(f"    - {key}: {type(value)}")
+                else:
+                    logger.info(f"  - {cov_type} covariates: {type(cov_data)}")
+        
+        # COMPREHENSIVE MODEL INPUT DEBUGGING
+        logger.info("=" * 80)
+        logger.info("COMPREHENSIVE MODEL INPUT DEBUGGING")
+        logger.info("=" * 80)
+        
+        # Frontend parameters received
+        logger.info(f"FRONTEND PARAMETERS RECEIVED:")
+        logger.info(f"  - Context Start Date: {context_start_date}")
+        logger.info(f"  - Context End Date: {context_end_date}")
+        logger.info(f"  - Context Length: {context_len}")
+        logger.info(f"  - Horizon Length: {horizon_len}")
+        logger.info(f"  - Target Column: {target_column}")
+        
+        # Data filtering results
+        logger.info(f"DATA FILTERING RESULTS:")
+        logger.info(f"  - Original data shape: {processed_data.shape}")
+        logger.info(f"  - Filtered data date range: {processed_data['date'].min()} to {processed_data['date'].max()}")
+        logger.info(f"  - Available columns: {list(processed_data.columns)}")
+        
+        # Target data details
+        logger.info(f"TARGET DATA DETAILS:")
+        logger.info(f"  - Target column: {target_column}")
+        logger.info(f"  - Target values length: {len(target_inputs)}")
+        logger.info(f"  - Target values range: {min(target_inputs):.4f} to {max(target_inputs):.4f}")
+        logger.info(f"  - First 5 target values: {target_inputs[:5]}")
+        logger.info(f"  - Last 5 target values: {target_inputs[-5:]}")
+        
+        # Covariate details
+        logger.info(f"COVARIATE DETAILS:")
+        if covariates:
+            for cov_type, cov_data in covariates.items():
+                logger.info(f"  - {cov_type}:")
+                if isinstance(cov_data, dict):
+                    for key, value in cov_data.items():
+                        if isinstance(value, list) and len(value) > 0:
+                            if isinstance(value[0], list):  # Nested list structure
+                                inner_list = value[0]
+                                logger.info(f"    - {key}: {len(inner_list)} values")
+                                logger.info(f"      First 5: {inner_list[:5]}")
+                                logger.info(f"      Last 5: {inner_list[-5:]}")
+                            else:  # Simple list
+                                logger.info(f"    - {key}: {len(value)} values")
+                                logger.info(f"      Values: {value}")
+                        else:
+                            logger.info(f"    - {key}: {value}")
+                else:
+                    logger.info(f"    - Raw data: {cov_data}")
+        else:
+            logger.info("  - No covariates provided")
+        
+        # Model configuration
+        logger.info(f"MODEL CONFIGURATION:")
+        logger.info(f"  - Context Length: {context_len}")
+        logger.info(f"  - Horizon Length: {horizon_len}")
+        logger.info(f"  - Total Length: {context_len + horizon_len}")
+        logger.info(f"  - Has Covariates: {bool(covariates)}")
+        
+        logger.info("=" * 80)
         
         # Perform forecasting using centralized function
         try:
@@ -435,12 +556,15 @@ def api_forecast():
             return jsonify({'success': False, 'message': f'Forecasting failed: {str(e)}'}), 500
         
         # Prepare visualization data using centralized function
+        # Use forecast data for historical data (respects context end date)
+        # Pass extended data separately for actual future values
         visualization_data = prepare_visualization_data(
-            processed_data=processed_data,
+            processed_data=processed_data,  # Use forecast data for historical data
             target_inputs=target_inputs,
             target_column=target_column,
             context_len=context_len,
-            horizon_len=horizon_len
+            horizon_len=horizon_len,
+            extended_data=processed_data_for_viz if 'processed_data_for_viz' in locals() else None
         )
         
         return jsonify({
@@ -481,12 +605,28 @@ def api_visualize():
         actual_future = viz_data.get('actual_future', [])
         target_name = viz_data.get('target_name', 'Value')
         
-        # Debug logging
-        logger.info(f"Visualization data - historical_data length: {len(historical_data)}")
-        logger.info(f"Visualization data - dates_historical length: {len(dates_historical)}")
-        logger.info(f"Visualization data - dates_future length: {len(dates_future)}")
-        logger.info(f"Visualization data - target_name: {target_name}")
+        # COMPREHENSIVE VISUALIZATION DEBUGGING
+        logger.info("=" * 80)
+        logger.info("VISUALIZATION ENDPOINT DEBUGGING")
+        logger.info("=" * 80)
+        logger.info(f"Visualization data received:")
+        logger.info(f"  - historical_data length: {len(historical_data)}")
+        logger.info(f"  - dates_historical length: {len(dates_historical)}")
+        logger.info(f"  - dates_future length: {len(dates_future)}")
+        logger.info(f"  - actual_future length: {len(actual_future)}")
+        logger.info(f"  - target_name: {target_name}")
+        
+        if historical_data:
+            logger.info(f"  - historical_data range: {min(historical_data):.4f} to {max(historical_data):.4f}")
+            logger.info(f"  - first 5 historical values: {historical_data[:5]}")
+            logger.info(f"  - last 5 historical values: {historical_data[-5:]}")
+        
+        if dates_historical:
+            logger.info(f"  - first historical date: {dates_historical[0]}")
+            logger.info(f"  - last historical date: {dates_historical[-1]}")
+        
         logger.info(f"Results keys: {list(results.keys())}")
+        logger.info("=" * 80)
         
         # Choose best forecast
         if 'point_forecast' in results:

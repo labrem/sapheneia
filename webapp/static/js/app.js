@@ -422,12 +422,19 @@ class SapheneiaTimesFM {
             </div>
         `;
 
-        dataDetailsDiv.innerHTML = html;
-        dataInfoDiv.style.display = 'block';
-        dataInfoDiv.classList.add('fade-in');
+        if (dataDetailsDiv) {
+            dataDetailsDiv.innerHTML = html;
+        }
+        if (dataInfoDiv) {
+            dataInfoDiv.style.display = 'block';
+            dataInfoDiv.classList.add('fade-in');
+        }
         
         // Generate data definition with integrated checkboxes
         this.generateDataDefinition(dataInfo.columns);
+        
+        // Initialize date configuration
+        this.initializeDateConfiguration(dataInfo);
     }
 
     formatValue(value) {
@@ -523,9 +530,13 @@ class SapheneiaTimesFM {
             </div>
         `;
 
-        columnsDiv.innerHTML = html;
-        definitionDiv.style.display = 'block';
-        definitionDiv.classList.add('fade-in');
+        if (columnsDiv) {
+            columnsDiv.innerHTML = html;
+        }
+        if (definitionDiv) {
+            definitionDiv.style.display = 'block';
+            definitionDiv.classList.add('fade-in');
+        }
 
         // Bind event listeners
         this.bindColumnSelectionEvents();
@@ -543,6 +554,280 @@ class SapheneiaTimesFM {
         });
 
         return definition;
+    }
+
+    initializeDateConfiguration(dataInfo) {
+        const contextDatesSection = document.getElementById('contextDatesSection');
+        if (!contextDatesSection) {
+            console.error('Context dates section not found');
+            return;
+        }
+        
+        contextDatesSection.style.display = 'block';
+        contextDatesSection.classList.add('fade-in');
+
+        // Store data range for constraints
+        this.dataDateRange = dataInfo.date_range;
+        this.dataPeriods = dataInfo.date_range.periods; // Actual number of periods in data
+        this.availableDates = dataInfo.date_range.available_dates || []; // All available dates in data
+        
+        if (this.dataDateRange && this.dataDateRange.start && this.dataDateRange.end) {
+            // Update available data information
+            const availableDataLength = document.getElementById('availableDataLength');
+            const availableDataRange = document.getElementById('availableDataRange');
+            const contextStartDate = document.getElementById('contextStartDate');
+            const contextEndDate = document.getElementById('contextEndDate');
+            
+            if (availableDataLength) availableDataLength.textContent = this.dataPeriods;
+            if (availableDataRange) availableDataRange.textContent = 
+                `${this.dataDateRange.start} to ${this.dataDateRange.end}`;
+
+            // Set up date constraints
+            this.setupDateConstraints(contextStartDate, contextEndDate);
+
+            // Initialize context dates to full data range
+            if (contextStartDate) contextStartDate.value = this.dataDateRange.start;
+            if (contextEndDate) contextEndDate.value = this.dataDateRange.end;
+
+            // Calculate and display context length
+            this.updateContextLengthFromDates();
+            
+            // Test: Force update after a short delay to ensure elements are ready
+            setTimeout(() => {
+                console.log('Forcing context length update after delay');
+                this.updateContextLengthFromDates();
+            }, 100);
+        }
+
+        // Bind date change events
+        this.bindDateChangeEvents();
+    }
+
+    setupDateConstraints(contextStartDate, contextEndDate) {
+        if (!this.availableDates || this.availableDates.length === 0) {
+            console.warn('No available dates found in data');
+            return;
+        }
+
+        console.log('Setting up date constraints with available dates:', this.availableDates);
+
+        // Populate select dropdowns with available dates
+        if (contextStartDate) {
+            this.populateDateSelect(contextStartDate, this.availableDates);
+        }
+        if (contextEndDate) {
+            this.populateDateSelect(contextEndDate, this.availableDates);
+        }
+    }
+
+    populateDateSelect(selectElement, availableDates) {
+        // Clear existing options except the first placeholder
+        while (selectElement.children.length > 1) {
+            selectElement.removeChild(selectElement.lastChild);
+        }
+        
+        // Add options for each available date
+        availableDates.forEach(date => {
+            const option = document.createElement('option');
+            option.value = date;
+            option.textContent = date;
+            selectElement.appendChild(option);
+        });
+    }
+
+    bindDateChangeEvents() {
+        // Context start date change event - validates and updates context length
+        const contextStartDate = document.getElementById('contextStartDate');
+        if (contextStartDate) {
+            console.log('Binding context start date event listener');
+            contextStartDate.addEventListener('change', () => {
+                this.updateContextFromStartDate();
+            });
+        } else {
+            console.error('Context start date element not found');
+        }
+
+        // Context end date change event - updates context length
+        const contextEndDate = document.getElementById('contextEndDate');
+        if (contextEndDate) {
+            console.log('Binding context end date event listener');
+            contextEndDate.addEventListener('change', () => {
+                this.updateContextFromEndDate();
+            });
+        } else {
+            console.error('Context end date element not found');
+        }
+    }
+
+
+    updateModelConfiguration(contextLen, horizonLen) {
+        const contextLenElement = document.getElementById('contextLen');
+        const horizonLenElement = document.getElementById('horizonLen');
+        
+        if (contextLenElement) contextLenElement.value = contextLen;
+        if (horizonLenElement) horizonLenElement.value = horizonLen;
+    }
+
+    calculateDaysDifference(startDate, endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const timeDiff = end.getTime() - start.getTime();
+        return Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 to include both start and end dates
+    }
+
+
+
+    updateContextFromStartDate() {
+        // When context start date changes, validate and update context length
+        console.log('Context start date changed');
+        const contextStartElement = document.getElementById('contextStartDate');
+        if (!contextStartElement) return;
+        
+        const contextStart = contextStartElement.value;
+        if (!contextStart) return;
+
+        // Since we're using select dropdowns with available dates, no need for range validation
+        console.log('Selected context start date:', contextStart);
+
+        // Recalculate context length and validate constraints
+        this.updateContextLengthFromDates();
+    }
+
+    updateContextFromEndDate() {
+        // When context end date changes, validate and update context length
+        console.log('Context end date changed');
+        const contextEndElement = document.getElementById('contextEndDate');
+        if (!contextEndElement) return;
+        
+        const contextEnd = contextEndElement.value;
+        if (!contextEnd) return;
+
+        // Since we're using select dropdowns with available dates, no need for range validation
+        console.log('Selected context end date:', contextEnd);
+
+        // Recalculate context length and validate constraints
+        this.updateContextLengthFromDates();
+    }
+
+
+    updateContextLengthFromDates() {
+        // Calculate context length based on actual data periods between selected dates
+        console.log('updateContextLengthFromDates called');
+        const contextStartElement = document.getElementById('contextStartDate');
+        const contextEndElement = document.getElementById('contextEndDate');
+        
+        if (!contextStartElement || !contextEndElement || !this.availableDates) {
+            console.log('Missing elements or available dates:', {
+                contextStartElement: !!contextStartElement,
+                contextEndElement: !!contextEndElement,
+                availableDates: !!this.availableDates
+            });
+            return;
+        }
+        
+        const contextStart = contextStartElement.value;
+        const contextEnd = contextEndElement.value;
+        
+        if (!contextStart || !contextEnd) {
+            console.log('Missing date values:', { contextStart, contextEnd });
+            return;
+        }
+        
+        // Find the indices of the selected dates in the available dates array
+        const startIndex = this.availableDates.indexOf(contextStart);
+        const endIndex = this.availableDates.indexOf(contextEnd);
+        
+        if (startIndex === -1 || endIndex === -1) {
+            console.error('Selected dates not found in available dates');
+            return;
+        }
+        
+        // Calculate context length as the number of periods between the dates (inclusive)
+        let contextLen = endIndex - startIndex + 1;
+        
+        console.log('Context length calculation:', {
+            contextStart,
+            contextEnd,
+            startIndex,
+            endIndex,
+            contextLen,
+            availableDatesCount: this.availableDates.length
+        });
+        
+        // Ensure context length is positive and doesn't exceed available data
+        if (contextLen <= 0) {
+            console.warn('Context length is zero or negative, setting to 1');
+            contextLen = 1;
+        }
+        
+        if (contextLen > this.dataPeriods) {
+            console.warn(`Context length (${contextLen}) exceeds available data periods (${this.dataPeriods}), adjusting`);
+            contextLen = this.dataPeriods;
+        }
+        
+        // Get horizon length from model configuration
+        const horizonLen = parseInt(document.getElementById('horizonLen').value) || 24;
+        
+        // Apply 32-multiple truncation (truncate earlier periods)
+        const truncatedContextLen = contextLen - (contextLen % 32);
+        
+        // Validate TimesFM constraints
+        const totalLength = truncatedContextLen + horizonLen;
+        const isMultipleOf32 = truncatedContextLen % 32 === 0;
+        const isWithinLimit = totalLength <= 4096;
+        
+        if (truncatedContextLen < 32) {
+            this.showAlert('error', 'Insufficient Context', 
+                `Context length ${truncatedContextLen} is less than minimum 32 periods required by TimesFM.`);
+            return;
+        }
+        
+        if (!isWithinLimit) {
+            this.showAlert('warning', 'Constraint Warning', 
+                `Total length ${totalLength} exceeds TimesFM limit of 4096.`);
+        }
+        
+        // Update model configuration and display
+        this.updateModelConfiguration(truncatedContextLen, horizonLen);
+        
+        const contextLengthDisplay = document.getElementById('contextLengthDisplay');
+        if (contextLengthDisplay) {
+            contextLengthDisplay.textContent = truncatedContextLen;
+        }
+        
+        this.updateConstraintFeedback(truncatedContextLen, horizonLen);
+    }
+
+    updateConstraintFeedback(contextLen, horizonLen) {
+        const totalLength = contextLen + horizonLen;
+        const isMultipleOf32 = contextLen % 32 === 0;
+        const isWithinLimit = totalLength <= 4096;
+        
+        // Update context length display with color coding
+        const contextDisplay = document.getElementById('contextLengthDisplay');
+        if (contextDisplay) {
+            if (isMultipleOf32) {
+                contextDisplay.style.color = 'green';
+            } else {
+                contextDisplay.style.color = 'red';
+            }
+        }
+        
+        // Update total length display with color coding
+        const totalDisplay = document.getElementById('totalLengthDisplay');
+        if (totalDisplay) {
+            if (isWithinLimit) {
+                totalDisplay.style.color = 'green';
+            } else {
+                totalDisplay.style.color = 'red';
+            }
+        }
+        
+        // Show warning if constraints are violated
+        if (!isMultipleOf32 || !isWithinLimit) {
+            this.showAlert('warning', 'Constraint Warning', 
+                `TimesFM 2.0 constraints: Context length must be multiple of 32 (${contextLen}), total length must be ≤ 4096 (${totalLength})`);
+        }
     }
 
     updateForecastButtonState() {
@@ -589,7 +874,9 @@ class SapheneiaTimesFM {
             data_definition: dataDefinition,
             use_covariates: document.getElementById('useCovariates').checked,
             context_len: parseInt(document.getElementById('contextLen').value),
-            horizon_len: parseInt(document.getElementById('horizonLen').value)
+            horizon_len: parseInt(document.getElementById('horizonLen').value),
+            context_start_date: document.getElementById('contextStartDate').value,
+            context_end_date: document.getElementById('contextEndDate').value
         };
         
         // Attach user-selected quantile ticks (no default - respect user selection)
@@ -599,6 +886,35 @@ class SapheneiaTimesFM {
             .sort((a,b) => a - b);
         // Don't set default quantiles - pass empty array if none selected
         config.quantile_indices = ticks;
+        
+        // FRONTEND DEBUGGING - Show what we're sending to backend
+        console.log("=".repeat(80));
+        console.log("FRONTEND DEBUGGING - SENDING TO BACKEND");
+        console.log("=".repeat(80));
+        console.log("Configuration being sent to backend:");
+        console.log("  - Filename:", config.filename);
+        console.log("  - Use Covariates:", config.use_covariates);
+        console.log("  - Context Length:", config.context_len);
+        console.log("  - Horizon Length:", config.horizon_len);
+        console.log("  - Context Start Date:", config.context_start_date);
+        console.log("  - Context End Date:", config.context_end_date);
+        console.log("  - Quantile Indices:", config.quantile_indices);
+        
+        // Show current UI state
+        console.log("Current UI state:");
+        console.log("  - Context Start Date element value:", document.getElementById('contextStartDate').value);
+        console.log("  - Context End Date element value:", document.getElementById('contextEndDate').value);
+        console.log("  - Context Length element value:", document.getElementById('contextLen').value);
+        console.log("  - Horizon Length element value:", document.getElementById('horizonLen').value);
+        console.log("  - Context Length display:", document.getElementById('contextLengthDisplay').textContent);
+        console.log("  - Use Covariates checkbox:", document.getElementById('useCovariates').checked);
+        
+        // Show data definition
+        console.log("Data definition:");
+        console.log("  - Selected columns:", Object.keys(dataDefinition));
+        console.log("  - Column types:", dataDefinition);
+        
+        console.log("=".repeat(80));
 
         this.showLoading('Running Forecast', 'TimesFM is analyzing your data and generating forecasts...');
 
@@ -788,14 +1104,14 @@ class SapheneiaTimesFM {
 
                         <!-- Summary Tab -->
                         <div class="tab-pane fade" id="summary" role="tabpanel">
-                            <div id="summaryContent">
+                            <div id="forecastSummary">
                                 <p class="text-muted">Summary will appear here after forecasting.</p>
                             </div>
                         </div>
 
                         <!-- Data Tab -->
                         <div class="tab-pane fade" id="data" role="tabpanel">
-                            <div id="dataContent">
+                            <div id="forecastData">
                                 <p class="text-muted">Data will appear here after forecasting.</p>
                             </div>
                         </div>
@@ -862,6 +1178,12 @@ class SapheneiaTimesFM {
 
     async displayResults(result) {
         const resultsCard = document.getElementById('resultsCard');
+        
+        if (!resultsCard) {
+            console.error('resultsCard element not found');
+            return;
+        }
+        
         resultsCard.style.display = 'block';
         resultsCard.classList.add('fade-in');
 
@@ -874,6 +1196,11 @@ class SapheneiaTimesFM {
 
     displaySummary(summary, results) {
         const summaryDiv = document.getElementById('forecastSummary');
+        
+        if (!summaryDiv) {
+            console.error('forecastSummary element not found');
+            return;
+        }
 
         const methodsCount = summary.methods_used.length;
         const mainForecast = results.enhanced_forecast || results.point_forecast;
@@ -959,6 +1286,11 @@ class SapheneiaTimesFM {
     displayDataTable(results) {
         const dataDiv = document.getElementById('forecastData');
         
+        if (!dataDiv) {
+            console.error('forecastData element not found');
+            return;
+        }
+        
         // Create table with forecast results
         const forecastLength = results.point_forecast ? results.point_forecast.length : 
                               results.enhanced_forecast ? results.enhanced_forecast.length : 0;
@@ -1004,6 +1336,10 @@ class SapheneiaTimesFM {
 
     async generateVisualization(result) {
         console.log('generateVisualization called with result:', result);
+        console.log('Visualization data:', result.visualization_data);
+        console.log('Historical data length:', result.visualization_data?.historical_data?.length);
+        console.log('Historical dates length:', result.visualization_data?.dates_historical?.length);
+        console.log('Target name:', result.visualization_data?.target_name);
         this.showLoading('Generating Chart', 'Creating professional forecast visualization...');
 
         try {
@@ -1029,6 +1365,26 @@ class SapheneiaTimesFM {
             });
 
             const vizResult = await response.json();
+            
+            console.log('Visualization result received:', vizResult);
+            console.log('Visualization success:', vizResult.success);
+            if (vizResult.figure) {
+                console.log('Figure data type:', typeof vizResult.figure);
+                if (typeof vizResult.figure === 'string') {
+                    console.log('Figure string length:', vizResult.figure.length);
+                } else {
+                    console.log('Figure object keys:', Object.keys(vizResult.figure));
+                    if (vizResult.figure.data) {
+                        console.log('Figure data traces:', vizResult.figure.data.length);
+                        vizResult.figure.data.forEach((trace, i) => {
+                            console.log(`Trace ${i}: name='${trace.name}', type='${trace.type}', visible=${trace.visible}`);
+                            if (trace.y) {
+                                console.log(`Trace ${i} y-data length: ${trace.y.length || 'scalar'}`);
+                            }
+                        });
+                    }
+                }
+            }
 
             if (vizResult.success) {
                 if (typeof Plotly === 'undefined') {

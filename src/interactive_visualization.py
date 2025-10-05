@@ -336,15 +336,44 @@ class InteractiveVisualizer:
         # Create figure
         fig = go.Figure()
         
+        # Debug logging for historical data
+        print(f"DEBUG: Historical data length: {len(historical_data)}")
+        print(f"DEBUG: Historical data type: {type(historical_data)}")
+        print(f"DEBUG: Historical data first 5: {historical_data[:5] if len(historical_data) > 0 else 'Empty'}")
+        print(f"DEBUG: Historical data last 5: {historical_data[-5:] if len(historical_data) > 0 else 'Empty'}")
+        print(f"DEBUG: Historical x length: {len(historical_x)}")
+        print(f"DEBUG: Historical x first 5: {historical_x[:5] if len(historical_x) > 0 else 'Empty'}")
+        
+        # Validate data before plotting
+        if len(historical_data) == 0:
+            print("ERROR: Historical data is empty!")
+            return None
+        
+        if len(historical_x) == 0:
+            print("ERROR: Historical x-axis data is empty!")
+            return None
+        
+        if len(historical_data) != len(historical_x):
+            print(f"ERROR: Mismatch between historical data ({len(historical_data)}) and x-axis ({len(historical_x)}) lengths!")
+            return None
+        
         # Plot historical data
-        fig.add_trace(go.Scatter(
+        print(f"DEBUG: About to plot historical data with {len(historical_data)} points")
+        print(f"DEBUG: Historical data sample: {historical_data[:3]}...{historical_data[-3:]}")
+        print(f"DEBUG: Historical x sample: {historical_x[:3]}...{historical_x[-3:]}")
+        
+        historical_trace = go.Scatter(
             x=historical_x,
             y=historical_data,
             mode='lines',
             name='Historical Data',
             line=dict(color=self.colors['historical'], width=3),
             hovertemplate='<b>Historical</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>'
-        ))
+        )
+        
+        print(f"DEBUG: Historical trace created: {historical_trace}")
+        fig.add_trace(historical_trace)
+        print(f"DEBUG: Historical trace added to figure. Figure has {len(fig.data)} traces")
 
         # Create seamless connection for forecast
         if dates_historical is None:
@@ -518,6 +547,14 @@ class InteractiveVisualizer:
         
         # Plot actual future data if available
         if actual_future is not None:
+            print(f"DEBUG: Plotting actual future values")
+            print(f"DEBUG: actual_future length: {len(actual_future)}")
+            print(f"DEBUG: actual_future sample: {actual_future[:3] if len(actual_future) > 0 else 'Empty'}")
+            print(f"DEBUG: dates_future length: {len(dates_future) if dates_future else 'None'}")
+            print(f"DEBUG: dates_future sample: {dates_future[:3] if dates_future and len(dates_future) > 0 else 'Empty'}")
+            print(f"DEBUG: historical_x last value: {historical_x[-1]}")
+            print(f"DEBUG: future_x first value: {future_x[0] if len(future_x) > 0 else 'Empty'}")
+            
             actual_connection = [historical_x[-1]] + list(actual_future)
             fig.add_trace(go.Scatter(
                 x=connection_x,
@@ -593,6 +630,13 @@ class InteractiveVisualizer:
             else:
                 fig.write_image(save_path)
             logger.info(f"Interactive plot saved to: {save_path}")
+        
+        # Debug final figure
+        print(f"DEBUG: Final figure has {len(fig.data)} traces")
+        for i, trace in enumerate(fig.data):
+            print(f"DEBUG: Trace {i}: name='{trace.name}', type='{trace.type}', visible={trace.visible}")
+            if hasattr(trace, 'y') and trace.y is not None:
+                print(f"DEBUG: Trace {i} y-data length: {len(trace.y) if hasattr(trace.y, '__len__') else 'scalar'}")
         
         # Show figure if requested
         if show_figure:
