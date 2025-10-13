@@ -224,15 +224,6 @@ python -c "import timesfm; print('TimesFM ready!')"
 - Verify sufficient data length (context_len + horizon_len)
 - Confirm numeric columns contain valid numbers
 
-## 🤝 Contributing
-
-This is a research repository for advancing TimesFM capabilities. Each researcher maintains their own notebook directory:
-
-- `notebooks/marcelo/` - Marcelo's experiments and covariates research
-- `notebooks/lucas/` - Lucas's financial forecasting demos  
-- `notebooks/matt/` - Matt's TimesFM analysis
-- `notebooks/matthieu/` - Matthieu's research notebooks
-
 ## 📚 References
 
 - [TimesFM Paper](https://research.google/blog/a-decoder-only-foundation-model-for-time-series-forecasting/)
