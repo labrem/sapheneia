@@ -2,7 +2,7 @@
 Sapheneia TimesFM Web Application
 
 A Flask-based web application for TimesFM forecasting with a professional interface.
-Supports both localhost deployment and GCP Cloud Run deployment.
+Supports localhost deployment.
 
 Features:
 - File upload for CSV data
@@ -716,7 +716,7 @@ def api_visualize():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint for deployment."""
+    """Health check endpoint."""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
