@@ -40,7 +40,7 @@ This will:
 
 - **`/webapp`** - Professional web application
   - Flask-based interface for TimesFM forecasting
-  - Support for localhost and GCP Cloud Run deployment
+  - Support for localhost deployment
   - Interactive parameter configuration
   - File upload and real-time visualization
 
@@ -52,7 +52,6 @@ This will:
 ✅ **Professional Visualization**: Publication-quality plots with prediction intervals  
 ✅ **Bootstrap Intervals**: Uncertainty quantification through sampling  
 ✅ **Web Interface**: Complete webapp for non-technical users  
-✅ **Cloud Deployment**: Ready for GCP Cloud Run deployment  
 
 ## 🛠️ Setup Options
 
@@ -68,11 +67,6 @@ For webapp deployment:
 ./setup.sh --webapp-only
 ```
 
-### GCP Cloud Deployment
-Includes GCP deployment tools:
-```bash
-./setup.sh --gcp-deploy
-```
 
 ## 📊 Usage Examples
 
@@ -176,24 +170,6 @@ Key configuration options:
 - **Downloadable Results**: Charts and data tables
 - **Sample Data Generation**: Built-in synthetic financial data
 
-## ☁️ Cloud Deployment
-
-### GCP Cloud Run Deployment
-
-```bash
-# Setup GCP deployment
-./setup.sh --gcp-deploy
-
-# Deploy to Cloud Run  
-./deploy_gcp.sh YOUR_PROJECT_ID us-central1
-```
-
-The deployment includes:
-- Docker containerization
-- Cloud Build configuration
-- Health checks and monitoring
-- Auto-scaling configuration
-- 4GB memory, 2 CPU allocation
 
 ## 📁 Project Structure
 
@@ -211,12 +187,9 @@ sapheneia/
 │   ├── app.py                 # Flask application
 │   ├── templates/             # HTML templates
 │   ├── static/                # CSS/JS assets
-│   ├── requirements.txt       # Web dependencies
-│   ├── Dockerfile            # Container configuration
-│   └── cloudbuild.yaml       # GCP deployment config
+│   └── requirements.txt       # Web dependencies
 ├── data/                      # Sample and user data
 ├── setup.sh                   # Automated setup script
-├── deploy_gcp.sh             # GCP deployment script
 ├── CLAUDE.md                 # Development instructions
 └── README.md                 # This file
 ```

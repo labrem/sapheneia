@@ -6,7 +6,7 @@
 # This script sets up the complete Sapheneia TimesFM environment for:
 # - Local development and research
 # - Notebook environment
-# - Web application deployment (localhost and GCP)
+# - Web application deployment (localhost only)
 # 
 # Usage:
 #   chmod +x setup.sh
@@ -15,7 +15,6 @@
 # Options:
 #   --local-only    Setup only for local development (no webapp)
 #   --webapp-only   Setup only webapp dependencies
-#   --gcp-deploy    Setup for GCP deployment
 #   --help          Show this help message
 # =============================================================================
 
@@ -42,7 +41,6 @@
 #
 #   7. Sets Up Project Structure: It creates several directories that the application needs to run, such as data/, logs/, and webapp/uploads/. It also creates a standard .gitignore file if one doesn't already exist to prevent temporary files and data from being committed to version control.
 #
-#   8. Sets Up GCP Deployment (Optional): If you use the --gcp-deploy option, it creates a new script called deploy_gcp.sh that you can use to deploy the web application to Google Cloud Run.
 #
 #   9. Verifies Installation: Finally, it runs a quick check to ensure everything was installed correctly. It tries to import the main libraries (timesfm, pandas, flask, etc.) and runs a very basic TimesFM operation to confirm the model is functional.
 #
@@ -316,63 +314,6 @@ EOF
     fi
 }
 
-# Function to setup GCP deployment
-setup_gcp_deployment() {
-    print_header "Setting up GCP Deployment Configuration"
-    
-    if ! command_exists gcloud; then
-        print_warning "Google Cloud SDK not found. Please install it for GCP deployment:"
-        print_warning "https://cloud.google.com/sdk/docs/install"
-        return
-    fi
-    
-    print_status "Google Cloud SDK found: $(gcloud version | head -n1)"
-    
-    # Create deployment script
-    cat > deploy_gcp.sh << 'EOF'
-#!/bin/bash
-
-# Sapheneia TimesFM GCP Deployment Script
-
-set -e
-
-PROJECT_ID="${1:-your-project-id}"
-REGION="${2:-us-central1}"
-
-if [[ "$PROJECT_ID" == "your-project-id" ]]; then
-    echo "Usage: ./deploy_gcp.sh YOUR_PROJECT_ID [REGION]"
-    echo "Example: ./deploy_gcp.sh sapheneia-demo us-central1"
-    exit 1
-fi
-
-echo "🚀 Deploying Sapheneia TimesFM to GCP"
-echo "Project: $PROJECT_ID"
-echo "Region: $REGION"
-
-# Set project
-gcloud config set project $PROJECT_ID
-
-# Enable required APIs
-echo "Enabling required APIs..."
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable run.googleapis.com
-gcloud services enable containerregistry.googleapis.com
-
-# Build and deploy using Cloud Build
-echo "Starting Cloud Build deployment..."
-gcloud builds submit webapp/ --config=webapp/cloudbuild.yaml \
-    --substitutions=_REGION=$REGION
-
-# Get the service URL
-SERVICE_URL=$(gcloud run services describe sapheneia-timesfm --region=$REGION --format="value(status.url)")
-
-echo "✅ Deployment completed!"
-echo "🌐 Service URL: $SERVICE_URL"
-EOF
-    
-    chmod +x deploy_gcp.sh
-    print_status "GCP deployment script created: deploy_gcp.sh"
-}
 
 # Function to display usage help
 show_help() {
@@ -385,14 +326,12 @@ USAGE:
 OPTIONS:
     --local-only    Setup only for local development (notebooks, src modules)
     --webapp-only   Setup only webapp dependencies
-    --gcp-deploy    Setup for GCP Cloud Run deployment
     --help          Show this help message
 
 EXAMPLES:
     ./setup.sh                    # Full setup (local + webapp)
     ./setup.sh --local-only       # Only research environment
     ./setup.sh --webapp-only      # Only web application
-    ./setup.sh --gcp-deploy       # Setup with GCP deployment tools
 
 REQUIREMENTS:
     - Bash shell
@@ -410,7 +349,6 @@ For web application setup, it will additionally:
 - Install Flask and web dependencies
 - Install Plotly for interactive visualizations
 - Create webapp deployment files
-- Setup GCP deployment scripts (if requested)
 
 EOF
 }
@@ -432,9 +370,6 @@ main() {
             ;;
         --webapp-only)
             print_status "Setting up webapp dependencies only"
-            ;;
-        --gcp-deploy)
-            print_status "Setting up with GCP deployment support"
             ;;
         full|"")
             print_status "Setting up full environment (local + webapp)"
@@ -475,10 +410,6 @@ main() {
     setup_project_structure
     
     
-    # Setup GCP deployment if requested
-    if [[ "$SETUP_TYPE" == "--gcp-deploy" ]] || [[ "$SETUP_TYPE" == "full" ]]; then
-        setup_gcp_deployment
-    fi
     
     # Verify installation
     verify_installation
@@ -497,9 +428,6 @@ main() {
         echo "  5. Open browser: http://localhost:8080"
     fi
     
-    if [[ "$SETUP_TYPE" == "--gcp-deploy" ]] || [[ "$SETUP_TYPE" == "full" ]]; then
-        echo "  6. Deploy to GCP: ./deploy_gcp.sh YOUR_PROJECT_ID"
-    fi
     
     echo
     print_status "Documentation: README.md"
