@@ -196,6 +196,7 @@ cython_debug/
 # Custom files
 GEMINI.md
 SAPHENEIA.md
+CLAUDE.md
 local/
 uploads/
 webapp/uploads/
