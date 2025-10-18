@@ -1,10 +1,10 @@
 name: Deploy to Hugging Face Spaces
 
-# Trigger deployment on push to huggingface branch
+# Trigger deployment on push to hf-deploy branch
 on:
   push:
     branches:
-      - huggingface
+      - hf-deploy
   # Allow manual deployment from GitHub UI
   workflow_dispatch:
 
@@ -46,8 +46,8 @@ jobs:
           # Note: You'll need to set HF_SPACE_NAME in GitHub secrets (format: username/spacename)
           git remote add hf-space https://USER:$HF_TOKEN@huggingface.co/spaces/${{ secrets.HF_SPACE_NAME }} || true
 
-          # Force push to HF Spaces
-          git push --force hf-space huggingface:main
+          # Force push to HF Spaces (hf-deploy branch -> Space's main branch)
+          git push --force hf-space hf-deploy:main
 
           echo "✅ Successfully deployed to Hugging Face Spaces!"
           echo "🚀 Your Space: https://huggingface.co/spaces/${{ secrets.HF_SPACE_NAME }}"
@@ -58,7 +58,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Space URL:** https://huggingface.co/spaces/${{ secrets.HF_SPACE_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** huggingface" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** hf-deploy" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
