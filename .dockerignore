@@ -1,0 +1,92 @@
+# Sapheneia TimesFM - Docker Build Exclusions
+# Optimize Docker build by excluding unnecessary files
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (not needed in container)
+*.md
+!README.md
+SAPHENEIA.md
+GEMINI.md
+
+# CI/CD
+.github/
+
+# Local development
+local/
+.claude/
+.cursor/
+.cursorignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# User uploads (will be created at runtime)
+uploads/
+webapp/uploads/
+
+# Results (will be created at runtime)
+results/
+webapp/results/
+
+# Logs
+logs/
+*.log
+
+# Jupyter notebooks (not needed for webapp)
+notebooks/
+*.ipynb
+.ipynb_checkpoints/
+
+# Environment files
+.env
+.env.*
+
+# Setup scripts (not needed in container)
+setup.sh
+setup_environment.sh
+
+# Lock files (dependencies already in requirements.txt)
+uv.lock
+poetry.lock
+Pipfile.lock
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+
+# Docker files (no need to copy Docker files into Docker)
+Dockerfile
+docker-compose.yml
+.dockerignore

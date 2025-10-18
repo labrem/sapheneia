@@ -1,0 +1,67 @@
+name: Deploy to Hugging Face Spaces
+
+# Trigger deployment on push to huggingface branch
+on:
+  push:
+    branches:
+      - huggingface
+  # Allow manual deployment from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  sync-to-hf-space:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for proper sync
+          lfs: true       # Enable Git LFS if using large files
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Prepare HF Spaces README
+        run: |
+          # Copy the HF Spaces README to root as README.md
+          # This will be displayed on the HF Spaces page
+          cp README_HF_SPACES.md README.md
+          echo "✅ HF Spaces README prepared"
+
+      - name: Push to Hugging Face Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Configure git
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "GitHub Actions Bot"
+
+          # Install huggingface_hub for better sync
+          pip install huggingface_hub
+
+          # Add HF Space as remote (using the format: https://USER:TOKEN@huggingface.co/spaces/USERNAME/SPACENAME)
+          # Note: You'll need to set HF_SPACE_NAME in GitHub secrets (format: username/spacename)
+          git remote add hf-space https://USER:$HF_TOKEN@huggingface.co/spaces/${{ secrets.HF_SPACE_NAME }} || true
+
+          # Force push to HF Spaces
+          git push --force hf-space huggingface:main
+
+          echo "✅ Successfully deployed to Hugging Face Spaces!"
+          echo "🚀 Your Space: https://huggingface.co/spaces/${{ secrets.HF_SPACE_NAME }}"
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Space URL:** https://huggingface.co/spaces/${{ secrets.HF_SPACE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** huggingface" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Wait for HF Spaces to rebuild (1-3 minutes)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check the Space status on Hugging Face" >> $GITHUB_STEP_SUMMARY
+          echo "3. Test the deployed application" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,42 @@
+# Sapheneia TimesFM - Docker Compose for Local Testing
+# This file allows you to test the Docker setup locally before deploying to HF Spaces
+#
+# Usage:
+#   docker-compose up --build    # Build and start the container
+#   docker-compose down          # Stop and remove the container
+#   docker-compose logs -f       # View logs
+
+version: '3.8'
+
+services:
+  sapheneia:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sapheneia-timesfm
+    ports:
+      - "7860:7860"  # Map host port 7860 to container port 7860
+    environment:
+      - FLASK_ENV=development
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - HF_HOME=/app/.cache
+      - TRANSFORMERS_CACHE=/app/.cache
+      - HF_HUB_CACHE=/app/.cache
+    volumes:
+      # Mount volumes for development (optional - comment out for production-like testing)
+      - ./webapp/uploads:/app/webapp/uploads
+      - ./webapp/results:/app/webapp/results
+      - ./logs:/app/logs
+      # Persistent model cache for faster restarts
+      - model-cache:/app/.cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  model-cache:
+    driver: local
